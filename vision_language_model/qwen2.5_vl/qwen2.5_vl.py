@@ -1,6 +1,7 @@
 import math
 import sys
 import time
+from collections import defaultdict
 from io import StringIO
 from logging import getLogger
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -351,72 +352,250 @@ def process_vision_info(
 
 
 def preprocess(images):
-    height, width, _ = images[0].shape
-
-    max_pixels = 12845056
-    min_pixels = 56 * 56
+    longest_edge = 12845056
+    shortest_edge = 56 * 56
     patch_size = 14
     merge_size = 2
-    factor = patch_size * merge_size
 
-    h_bar = round(height / factor) * factor
-    w_bar = round(width / factor) * factor
-    if h_bar * w_bar > max_pixels:
-        beta = np.sqrt((height * width) / max_pixels)
-        h_bar = np.floor(height / beta / factor) * factor
-        w_bar = np.floor(width / beta / factor) * factor
-    elif h_bar * w_bar < min_pixels:
-        beta = np.sqrt(min_pixels / (height * width))
-        h_bar = np.ceil(height * beta / factor) * factor
-        w_bar = np.ceil(width * beta / factor) * factor
-    resized_height, resized_width = h_bar, w_bar
+    def _group_images_by_shape(images):
+        """Helper function to flatten a single level of nested image structures and group by shape."""
+        grouped_images = defaultdict(list)
+        grouped_images_index = []
+        for image in images:
+            shape = image.shape[1:]
+            grouped_images[shape].append(image)
+            grouped_images_index.append((shape, len(grouped_images[shape]) - 1))
 
-    patches = []
-    for img in images:
-        img = np.array(
-            Image.fromarray(img).resize(
-                (resized_width, resized_height), Image.Resampling.BICUBIC
-            )
+        # Stack images with the same shape
+        grouped_images = {
+            shape: np.stack(images_list, axis=0)
+            for shape, images_list in grouped_images.items()
+        }
+
+        return grouped_images, grouped_images_index
+
+    grouped_images, grouped_images_index = _group_images_by_shape(images)
+    resized_images_grouped = {}
+    for shape, stacked_images in grouped_images.items():
+        height, width = stacked_images.shape[-2:]
+
+        resized_height, resized_width = smart_resize(
+            height,
+            width,
+            factor=patch_size * merge_size,
+            min_pixels=shortest_edge,
+            max_pixels=longest_edge,
         )
+        resized_images = [
+            np.array(
+                Image.fromarray(img.transpose(1, 2, 0)).resize(
+                    (resized_width, resized_height), Image.Resampling.BICUBIC
+                )
+            ).transpose(2, 0, 1)
+            for img in stacked_images
+        ]
+        resized_images_grouped[shape] = np.stack(resized_images, axis=0)
 
-        mean = np.array([0.48145467, 0.4578275, 0.40821072], dtype=np.float32)
-        std = np.array([0.26862955, 0.2613026, 0.2757771], dtype=np.float32)
-        img = img / 255
-        img = (img - mean) / std
-
-        img = img.transpose(2, 0, 1)  # HWC -> CHW
-        # img = np.expand_dims(img, axis=0)
-        img = img.astype(np.float32)
-
-        patches.append(img)
-
-    patches = np.array(patches)
+    resized_images = [
+        resized_images_grouped[shape][idx] for shape, idx in grouped_images_index
+    ]
 
     temporal_patch_size = 2
-    if patches.shape[0] == 1:
-        patches = np.tile(patches, (temporal_patch_size, 1, 1, 1))
 
-    channel = patches.shape[1]
-    grid_t = patches.shape[0] // temporal_patch_size
-    grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
-    patches = patches.reshape(
-        grid_t,
-        temporal_patch_size,
-        channel,
-        grid_h // merge_size,
-        merge_size,
-        patch_size,
-        grid_w // merge_size,
-        merge_size,
-        patch_size,
-    )
-    patches = patches.transpose(0, 3, 6, 4, 7, 2, 1, 5, 8)
-    flatten_patches = patches.reshape(
-        grid_t * grid_h * grid_w,
-        channel * temporal_patch_size * patch_size * patch_size,
-    )
+    grouped_images, grouped_images_index = _group_images_by_shape(resized_images)
+    processed_images_grouped = {}
+    processed_grids = {}
+    for shape, stacked_images in grouped_images.items():
+        resized_height, resized_width = stacked_images.shape[-2:]
+        # Fused rescale and normalize
+        mean = np.array([0.48145467, 0.4578275, 0.40821072], dtype=np.float32)
+        std = np.array([0.26862955, 0.2613026, 0.2757771], dtype=np.float32)
 
-    return flatten_patches, (grid_t, grid_h, grid_w)
+        # Rescale from 0-255 to 0-1
+        patches = stacked_images.astype(np.float32) / 255.0
+
+        # Normalize with mean and std
+        mean = mean.reshape(1, 3, 1, 1)
+        std = std.reshape(1, 3, 1, 1)
+        patches = (patches - mean) / std
+        if patches.ndim == 4:
+            # add a temporal dimension if we have images
+            patches = np.expand_dims(patches, axis=1)
+        if patches.shape[1] % temporal_patch_size != 0:
+            repeats = np.repeat(
+                patches[:, -1:, :, :, :], temporal_patch_size - 1, axis=1
+            )
+            patches = np.concatenate([patches, repeats], axis=1)
+        batch_size, grid_t, channel = patches.shape[:3]
+        grid_t = grid_t // temporal_patch_size
+        grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
+
+        patches = patches.reshape(
+            batch_size,
+            grid_t,
+            temporal_patch_size,
+            channel,
+            grid_h // merge_size,
+            merge_size,
+            patch_size,
+            grid_w // merge_size,
+            merge_size,
+            patch_size,
+        )
+        # Reorder dimensions to group grid and patch information for subsequent flattening.
+        # (batch, grid_t, grid_h, grid_w, merge_h, merge_w, channel, temp_patch_size, patch_h, patch_w)
+        patches = np.transpose(patches, (0, 1, 4, 7, 5, 8, 3, 2, 6, 9))
+        flatten_patches = patches.reshape(
+            batch_size,
+            grid_t * grid_h * grid_w,
+            channel * temporal_patch_size * patch_size * patch_size,
+        )
+
+        processed_images_grouped[shape] = flatten_patches
+        processed_grids[shape] = [[grid_t, grid_h, grid_w]] * batch_size
+
+    processed_images = [
+        processed_images_grouped[shape][idx] for shape, idx in grouped_images_index
+    ]
+    processed_grids = [
+        processed_grids[shape][idx] for shape, idx in grouped_images_index
+    ]
+    pixel_values = np.concatenate(processed_images, axis=0)
+    image_grid_thw = np.array(processed_grids)
+
+    data = {"pixel_values": pixel_values, "image_grid_thw": image_grid_thw}
+
+    return data
+
+
+def video_processor(videos):
+    longest_edge = 12845056
+    shortest_edge = 56 * 56
+    patch_size = 14
+    merge_size = 2
+
+    def _group_videos_by_shape(videos):
+        """
+        Groups videos by shape.
+        Returns a dictionary with the shape as key and a list of videos with that shape as value,
+        and a list with the index of the video in the original list as key and the shape and index in the grouped list as value.
+        """
+        grouped_videos = {}
+        grouped_videos_index = []
+        for video in videos:
+            shape = video.shape[-2::]
+            num_frames = video.shape[0]  # video format BTCHW
+            shape = (num_frames, *shape)
+            if shape not in grouped_videos:
+                grouped_videos[shape] = []
+            grouped_videos[shape].append(video)
+            grouped_videos_index.append((shape, len(grouped_videos[shape]) - 1))
+        # stack videos with the same size and number of frames
+        grouped_videos = {
+            shape: np.stack(videos, axis=0) for shape, videos in grouped_videos.items()
+        }
+        return grouped_videos, grouped_videos_index
+
+    grouped_videos, grouped_videos_index = _group_videos_by_shape(videos)
+    resized_videos_grouped = {}
+    for shape, stacked_videos in grouped_videos.items():
+        height, width = stacked_videos[0].shape[-2:]
+
+        resized_height, resized_width = smart_resize(
+            height,
+            width,
+            factor=patch_size * merge_size,
+            min_pixels=shortest_edge,
+            max_pixels=longest_edge,
+        )
+        resized_videos = [
+            np.stack(
+                [
+                    np.array(
+                        Image.fromarray(frame.transpose(1, 2, 0)).resize(
+                            (resized_width, resized_height), Image.Resampling.BICUBIC
+                        )
+                    ).transpose(2, 0, 1)
+                    for frame in video
+                ],
+                axis=0,
+            )
+            for video in stacked_videos
+        ]
+        resized_videos_grouped[shape] = np.stack(resized_videos, axis=0)
+
+    resized_videos = [
+        resized_videos_grouped[shape][idx] for shape, idx in grouped_videos_index
+    ]
+
+    temporal_patch_size = 2
+
+    grouped_videos, grouped_videos_index = _group_videos_by_shape(resized_videos)
+    processed_videos_grouped = {}
+    processed_grids = {}
+    for shape, stacked_videos in grouped_videos.items():
+        resized_height, resized_width = stacked_videos[0].shape[-2:]
+        # Fused rescale and normalize
+        mean = np.array([0.48145467, 0.4578275, 0.40821072], dtype=np.float32)
+        std = np.array([0.26862955, 0.2613026, 0.2757771], dtype=np.float32)
+
+        # Rescale from 0-255 to 0-1
+        patches = stacked_videos.astype(np.float32) / 255.0
+
+        # Normalize with mean and std
+        mean = mean.reshape(1, 3, 1, 1)
+        std = std.reshape(1, 3, 1, 1)
+        patches = (patches - mean) / std
+
+        # Check that videos have `num_frames` divisible by `temporal_patch_size`
+        if patches.shape[1] % temporal_patch_size != 0:
+            repeats = np.repeat(
+                patches[:, -1:, :, :, :], temporal_patch_size - 1, axis=1
+            )
+            patches = np.concatenate([patches, repeats], axis=1)
+        batch_size, grid_t, channel = patches.shape[:3]
+        grid_t = grid_t // temporal_patch_size
+        grid_h, grid_w = resized_height // patch_size, resized_width // patch_size
+
+        patches = patches.reshape(
+            batch_size,
+            grid_t,
+            temporal_patch_size,
+            channel,
+            grid_h // merge_size,
+            merge_size,
+            patch_size,
+            grid_w // merge_size,
+            merge_size,
+            patch_size,
+        )
+        # Reorder dimensions to group grid and patch information for subsequent flattening.
+        # (batch, grid_t, grid_h, grid_w, merge_h, merge_w, channel, temp_patch_size, patch_h, patch_w)
+        patches = np.transpose(patches, (0, 1, 4, 7, 5, 8, 3, 2, 6, 9))
+        flatten_patches = patches.reshape(
+            batch_size,
+            grid_t * grid_h * grid_w,
+            channel * temporal_patch_size * patch_size * patch_size,
+        )
+
+        processed_videos_grouped[shape] = flatten_patches
+        processed_grids[shape] = [[grid_t, grid_h, grid_w]] * batch_size
+
+    processed_videos = [
+        processed_videos_grouped[shape][idx] for shape, idx in grouped_videos_index
+    ]
+    processed_grids = [
+        processed_grids[shape][idx] for shape, idx in grouped_videos_index
+    ]
+    pixel_values_videos = np.concatenate(processed_videos, axis=0)
+    video_grid_thw = np.array(processed_grids)
+
+    data = {
+        "pixel_values_videos": pixel_values_videos,
+        "video_grid_thw": video_grid_thw,
+    }
+
+    return data
 
 
 def forward(
@@ -682,11 +861,11 @@ def tokenizer_decode(input_ids, generated_ids, tokenizer, intermediate):
 def sample(
     models,
     input_ids,
-    pixel_values,
     attention_mask,
-    image_grid_thw,
-    video_grid_thw,
-    tokenizer,
+    pixel_values=None,
+    pixel_values_videos=None,
+    image_grid_thw=None,
+    video_grid_thw=None,
 ):
     pad_token_id = 151643
     image_token_id = 151655
@@ -732,22 +911,59 @@ def sample(
     pixel_values = np.load("pixel_values.npy")
     image_grid_thw = np.load("image_grid_thw.npy")
 
+    inputs_embeds = np.zeros((1, 0, 2048), dtype=np.float32)
+
     net = models["vision_encoder"]
-    if not args.onnx:
-        output = net.predict([input_ids, pixel_values, image_grid_thw, image_token_id])
-    else:
-        output = net.run(
-            None,
-            {
-                "input_ids": input_ids.astype(np.int64),
-                "pixel_values": pixel_values,
-                "image_grid_thw": image_grid_thw.astype(np.int64),
-                # "image_token_id": image_token_id.astype(np.int64),
-            },
-        )
-    inputs_embeds = output[0]
+    if pixel_values is not None:
+        if not args.onnx:
+            output = net.predict(
+                [
+                    input_ids,
+                    inputs_embeds,
+                    pixel_values,
+                    image_grid_thw,
+                    np.array(image_token_id),
+                ]
+            )
+        else:
+            output = net.run(
+                None,
+                {
+                    "input_ids": input_ids,
+                    "inputs_embeds": inputs_embeds,
+                    "pixel_values": pixel_values,
+                    "image_grid_thw": image_grid_thw,
+                    "image_token_id": np.array(image_token_id),
+                },
+            )
+        inputs_embeds = output[0]
+
+    if pixel_values_videos is not None:
+        if not args.onnx:
+            output = net.predict(
+                [
+                    input_ids,
+                    inputs_embeds,
+                    pixel_values_videos,
+                    video_grid_thw,
+                    np.array(video_token_id),
+                ]
+            )
+        else:
+            output = net.run(
+                None,
+                {
+                    "input_ids": input_ids,
+                    "inputs_embeds": inputs_embeds,
+                    "pixel_values": pixel_values_videos,
+                    "image_grid_thw": video_grid_thw,
+                    "image_token_id": np.array(video_token_id),
+                },
+            )
+        inputs_embeds = output[0]
+
     past_key_values = [
-        np.zeros((1, 2, 0, 128), dtype=np.float32) for _ in range(28 * 2)
+        np.zeros((1, 2, 0, 128), dtype=np.float32) for _ in range(36 * 2)
     ]
 
     if args.benchmark:
@@ -759,13 +975,9 @@ def sample(
     batch_size, cur_len = input_ids.shape
     this_peer_finished = False
     unfinished_sequences = np.ones(batch_size, dtype=int)
-    cache_position = (
-        np.cumsum(np.ones_like(input_ids[0, :], dtype=np.int64), axis=0) - 1
-    )
-    rope_deltas = None
     max_length = args.max_length + input_ids.shape[1]
 
-    net = models["net"]
+    net = models["language_model"]
     first_run = True
     while True:
         # prepare model inputs
@@ -856,53 +1068,51 @@ def sample(
 
 def predict(models, messages):
     text = apply_chat_template(messages)
-    image_inputs, video_inputs = process_vision_info(messages)
+    images, videos = process_vision_info(messages)
 
-    pixel_values = None
-    image_grid_thw = None
-    video_grid_thw = None
-    if image_inputs:
-        pixel_values = []
-        vision_grid_thws = []
-        for img in image_inputs:
-            patches, vision_grid_thw = preprocess([img])
-            pixel_values.extend(patches)
-            vision_grid_thws.append(vision_grid_thw)
-        pixel_values = np.array(pixel_values)
-        image_grid_thw = np.array(vision_grid_thws)
-    if video_inputs:
-        pixel_values = []
-        vision_grid_thws = []
-        for images in video_inputs:
-            patches, vision_grid_thw = preprocess(images)
-            pixel_values.extend(patches)
-            vision_grid_thws.append(vision_grid_thw)
-        pixel_values = np.array(pixel_values)
-        video_grid_thw = np.array(vision_grid_thws)
+    image_inputs = videos_inputs = {}
+    if images is not None:
+        images = [img.transpose(2, 0, 1) for img in images]
+        image_inputs = preprocess(images)
+        image_grid_thw = image_inputs["image_grid_thw"]
+    if videos is not None:
+        videos_inputs = video_processor(videos)
+        video_grid_thw = videos_inputs["video_grid_thw"]
 
-    merge_length = 4
-    if image_inputs:
-        index = 0
-        while "<|image_pad|>" in text:
-            text = text.replace(
-                "<|image_pad|>",
-                "<|placeholder|>" * (image_grid_thw[index].prod() // merge_length),
-                1,
-            )
-            index += 1
-        text = text.replace("<|placeholder|>", "<|image_pad|>")
-    if video_inputs:
-        index = 0
-        while "<|video_pad|>" in text:
-            text = text.replace(
-                "<|video_pad|>",
-                "<|placeholder|>" * (video_grid_thw[index].prod() // merge_length),
-                1,
-            )
-            index += 1
-        text = text.replace("<|placeholder|>", "<|video_pad|>")
+        fps = 2.0
+        temporal_patch_size = 2
+        second_per_grid_ts = [temporal_patch_size / fps] * len(video_grid_thw)
+        videos_inputs.update({"second_per_grid_ts": second_per_grid_ts})
 
     text = [text]
+
+    merge_size = 2
+
+    image_token = "<|image_pad|>"
+    if images is not None:
+        merge_length = merge_size**2
+        index = 0
+        for i in range(len(text)):
+            while image_token in text[i]:
+                num_image_tokens = image_grid_thw[index].prod() // merge_length
+                text[i] = text[i].replace(
+                    image_token, "<|placeholder|>" * num_image_tokens, 1
+                )
+                index += 1
+            text[i] = text[i].replace("<|placeholder|>", image_token)
+
+    video_token = "<|video_pad|>"
+    if videos is not None:
+        merge_length = merge_size**2
+        index = 0
+        for i in range(len(text)):
+            while video_token in text[i]:
+                num_video_tokens = video_grid_thw[index].prod() // merge_length
+                text[i] = text[i].replace(
+                    video_token, "<|placeholder|>" * num_video_tokens, 1
+                )
+                index += 1
+            text[i] = text[i].replace("<|placeholder|>", video_token)
 
     tokenizer = models["tokenizer"]
     if args.disable_ailia_tokenizer:
@@ -910,30 +1120,26 @@ def predict(models, messages):
             text,
             return_tensors="np",
             padding=True,
-            padding_side="left",
         )
     else:
         text_inputs = tokenizer(
             text,
             return_tensors="np",
             padding=True,
-            # padding_side="left",
         )
 
-    input_ids = text_inputs["input_ids"]
-    attention_mask = text_inputs["attention_mask"]
+    data = {**text_inputs, **image_inputs, **videos_inputs}
 
     generated_ids = sample(
         models,
-        input_ids,
-        pixel_values,
-        attention_mask,
-        image_grid_thw,
-        video_grid_thw,
-        tokenizer,
+        input_ids=data["input_ids"],
+        attention_mask=data["attention_mask"],
+        pixel_values=data["pixel_values"],
+        image_grid_thw=data.get("image_grid_thw"),
+        video_grid_thw=data.get("video_grid_thw"),
     )
 
-    output_text = tokenizer_decode(input_ids, generated_ids, tokenizer, False)
+    output_text = tokenizer_decode(data["input_ids"], generated_ids, tokenizer, False)
 
     return output_text[0]
 
