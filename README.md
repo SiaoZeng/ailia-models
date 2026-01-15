@@ -33,11 +33,6 @@ If you would like to try on your computer:
 - 2025.12.21 Add silerovad v5, v6, v6_2
 - 2025.12.17 Add sensevoice, cosyvoice2
 - 2025.12.01 Add glass, mobilevlm, donut
-- 2025.11.07 Add mobile_sam, yolox_body_head_hand_face, yolov12 (ailia SDK 1.6)
-- 2025.11.03 Add fp16 version of whisper tiny and base
-- 2025.09.29 Add ruri-v3 (embedding)
-- 2025.09.22 Add paddleocr_v3
-- 2025.07.17 Add 6d_repnet_360, siglip2
 
 - More information in our [Wiki](https://github.com/ailia-ai/ailia-models/wiki)
 
