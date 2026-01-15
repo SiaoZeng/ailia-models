@@ -24,9 +24,13 @@ If you would like to try on your computer:
 [ailia-models wiki](https://deepwiki.com/ailia-ai/ailia-models)
 
 # Supported models
-390 models as of December 17, 2025
+395 models as of December 30, 2025
 
 # Latest update
+- 2025.12.30 Add demucs, latentsync
+- 2025.12.26 Add sadtalker
+- 2025.12.25 Add samurai, cotracker3 (ailia SDK 1.6.1)
+- 2025.12.21 Add silerovad v5, v6, v6_2
 - 2025.12.17 Add sensevoice, cosyvoice2
 - 2025.12.01 Add glass, mobilevlm, donut
 - 2025.11.07 Add mobile_sam, yolox_body_head_hand_face, yolov12 (ailia SDK 1.6)
