@@ -27,7 +27,7 @@ REMOTE_PATH = "https://storage.googleapis.com/ailia-models/embeddinggemma/"
 # Arguemnt Parser Config
 # ======================
 
-parser = get_base_parser("EmbeddingGemma", None, None)
+parser = get_base_parser("EmbeddingGemma", None, None, fp16_support = False)
 parser.add_argument(
     "-q",
     "--query",
