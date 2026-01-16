@@ -204,16 +204,14 @@ def main():
 
         net = onnxruntime.InferenceSession(WEIGHT_PATH)
 
-    # TODO
-    args.disable_ailia_tokenizer = True
     if args.disable_ailia_tokenizer:
         from transformers import GemmaTokenizerFast
 
         tokenizer = GemmaTokenizerFast.from_pretrained("./tokenizer/")
     else:
-        from ailia_tokenizer import GemmaTokenizerFast
+        from ailia_tokenizer import GemmaTokenizer
 
-        # tokenizer = GemmaTokenizerFast.from_pretrained("./tokenizer/")
+        tokenizer = GemmaTokenizer.from_pretrained("./tokenizer/")
 
     models = {
         "tokenizer": tokenizer,
