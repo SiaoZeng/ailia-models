@@ -131,6 +131,8 @@ def recognize_from_image(models):
         truncation=True,
     )
     input_ids = encoded["input_ids"]
+    if not args.disable_ailia_tokenizer:
+        input_ids = input_ids[:,1:] # remove bos token
 
     net = models["net"]
 
