@@ -114,6 +114,8 @@ WEIGHT_PATH = "Qwen2.5-VL-3B_language_model.onnx"
 MODEL_PATH = "Qwen2.5-VL-3B_language_model.onnx.prototxt"
 WEIGHT_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder.onnx"
 MODEL_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder.onnx.prototxt"
+PB_PATH = "Qwen2.5-VL-3B_language_model_weights.pb"
+PB_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder_weights.pb"
 
 # ======================
 # Secondary Functions
@@ -636,24 +638,21 @@ def forward(
                     input_ids,
                     inputs_embeds,
                     position_ids,
-                    attention_mask,
                     *past_key_values,
                 ]
             )
             logits, new_past_key_values = output[0], output[1:]
         else:
-            NUM_KV = 28
+            NUM_KV = 36
             key_shapes = []
             value_shapes = []
             for i in range(NUM_KV):
                 key_shapes.append(
-                    net.get_blob_shape(
-                        net.find_blob_index_by_name("key_cache_out" + str(i))
-                    )
+                    net.get_blob_shape(net.find_blob_index_by_name(f"present.{i}.key"))
                 )
                 value_shapes.append(
                     net.get_blob_shape(
-                        net.find_blob_index_by_name("value_cache_out" + str(i))
+                        net.find_blob_index_by_name(f"present.{i}.value")
                     )
                 )
             net.set_input_blob_data(input_ids, net.find_blob_index_by_name("input_ids"))
@@ -663,18 +662,17 @@ def forward(
             net.set_input_blob_data(
                 position_ids, net.find_blob_index_by_name("position_ids")
             )
-            net.set_input_blob_data(
-                attention_mask, net.find_blob_index_by_name("attention_mask")
-            )
             for i in range(NUM_KV):
                 net.set_input_blob_shape(
-                    key_shapes[i], net.find_blob_index_by_name("key_cache" + str(i))
+                    key_shapes[i],
+                    net.find_blob_index_by_name(f"past_key_values.{i}.key"),
                 )
                 net.set_input_blob_shape(
-                    value_shapes[i], net.find_blob_index_by_name("value_cache" + str(i))
+                    value_shapes[i],
+                    net.find_blob_index_by_name(f"past_key_values.{i}.value"),
                 )
-                net.copy_blob_data("key_cache" + str(i), "key_cache_out" + str(i))
-                net.copy_blob_data("value_cache" + str(i), "value_cache_out" + str(i))
+                net.copy_blob_data(f"past_key_values.{i}.key", f"present.{i}.key")
+                net.copy_blob_data(f"past_key_values.{i}.value", f"present.{i}.value")
             net.update()
             logits = net.get_blob_data(net.find_blob_index_by_name("logits"))
             new_past_key_values = None
@@ -850,43 +848,12 @@ def sample(
     if INTERMEDIATE:
         initial_ids = input_ids.copy()
 
-    pixel_values = (
-        pixel_values
-        if pixel_values is not None
-        # dummy for no image
-        else np.zeros((16, 1176), dtype=np.float32)
-    )
-    image_token_id = (
-        np.array([image_token_id])
-        if image_grid_thw is not None
-        else (
-            np.array([video_token_id])
-            if video_grid_thw is not None
-            # dummy for no image
-            else np.array([-1], dtype=int)
-        )
-    )
-    image_grid_thw = (
-        image_grid_thw
-        if image_grid_thw is not None
-        else (
-            video_grid_thw
-            if video_grid_thw is not None
-            # dummy for no image
-            else np.array([[1, 4, 4]], dtype=int)
-        )
-    )
-
     if args.benchmark:
         start = int(round(time.time() * 1000))
 
     if INTERMEDIATE:
         print("Encoding..." + "\n\u001b[2A")
         before_text = ""
-
-    input_ids = np.load("input_ids.npy")
-    pixel_values = np.load("pixel_values.npy")
-    image_grid_thw = np.load("image_grid_thw.npy")
 
     inputs_embeds = np.zeros((1, 0, 2048), dtype=np.float32)
 
@@ -914,7 +881,6 @@ def sample(
                 },
             )
         inputs_embeds = output[0]
-
     if pixel_values_videos is not None:
         if not args.onnx:
             output = net.predict(
@@ -954,6 +920,7 @@ def sample(
     unfinished_sequences = np.ones(batch_size, dtype=int)
     cache_position = np.cumsum(np.ones(cur_len, dtype=np.int64), axis=0) - 1
 
+    tokenizer = models["tokenizer"]
     net = models["language_model"]
     first_run = True
     rope_deltas = None
@@ -973,11 +940,16 @@ def sample(
             )
         else:
             batch_size, seq_length = position_ids.shape
-            position_ids = np.arange(seq_length, dtype=np.int64)
-            position_ids = np.tile(position_ids.reshape(1, 1, -1), (3, batch_size, 1))
+            vision_position_ids = np.arange(seq_length, dtype=np.int64)
+            vision_position_ids = np.tile(
+                vision_position_ids.reshape(1, 1, -1), (3, batch_size, 1)
+            )
             delta = cache_position[0] + rope_deltas
             delta = np.repeat(delta, batch_size // delta.shape[0], axis=0)
-            vision_positions = position_ids + np.broadcast_to(delta, position_ids.shape)
+            vision_positions = vision_position_ids + np.broadcast_to(
+                delta, vision_position_ids.shape
+            )
+
         text_positions = position_ids[None, ...]
         position_ids = np.concatenate([text_positions, vision_positions], axis=0)
 
@@ -993,11 +965,19 @@ def sample(
             first_run,
         )
         first_run = False
+        inputs_embeds = inputs_embeds[:, :0, :]
 
         if args.benchmark:
             end = int(round(time.time() * 1000))
             estimation_time = end - start
             logger.info(f"\tdecode time {estimation_time} ms")
+
+        # update_model_kwargs_for_generation
+        attention_mask = np.concatenate(
+            [attention_mask, np.ones((attention_mask.shape[0], 1), dtype=int)],
+            axis=-1,
+        )
+        cache_position = cache_position[-1:] + 1
 
         next_token_logits = logits[:, -1, :]
 
@@ -1019,21 +999,6 @@ def sample(
         # update generated ids, model inputs, and length for next step
         input_ids = np.concatenate([input_ids, next_tokens[:, None]], axis=-1)
 
-        attention_mask = np.concatenate(
-            [attention_mask, np.ones((attention_mask.shape[0], 1), dtype=int)],
-            axis=-1,
-        )
-        cache_position = cache_position[-1:] + 1
-
-        unfinished_sequences = unfinished_sequences & ~stopping_criteria(
-            input_ids, max_length=3730
-        )
-        this_peer_finished = np.max(unfinished_sequences) == 0
-        cur_len += 1
-
-        if this_peer_finished:
-            break
-
         if INTERMEDIATE:
             output_text = tokenizer_decode(initial_ids, input_ids, tokenizer, True)[0]
             if output_text.startswith(before_text):
@@ -1044,6 +1009,11 @@ def sample(
             sys.stdout.flush()
             if output_text != "":
                 before_text = output_text
+
+        unfinished_sequences = unfinished_sequences & ~stopping_criteria(
+            input_ids, max_length=3730
+        )
+        this_peer_finished = np.max(unfinished_sequences) == 0
 
     return input_ids
 
@@ -1110,18 +1080,18 @@ def predict(models, messages):
             padding=True,
         )
 
-    data = {**text_inputs, **image_inputs, **videos_inputs}
-
+    input_ids = text_inputs["input_ids"]
+    attention_mask = text_inputs["attention_mask"]
     generated_ids = sample(
         models,
-        input_ids=data["input_ids"],
-        attention_mask=data["attention_mask"],
-        pixel_values=data["pixel_values"],
-        image_grid_thw=data.get("image_grid_thw"),
-        video_grid_thw=data.get("video_grid_thw"),
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        pixel_values=image_inputs.get("pixel_values"),
+        pixel_values_videos=videos_inputs.get("pixel_values_videos"),
+        image_grid_thw=image_inputs.get("image_grid_thw"),
+        video_grid_thw=videos_inputs.get("video_grid_thw"),
     )
-
-    output_text = tokenizer_decode(data["input_ids"], generated_ids, tokenizer, False)
+    output_text = tokenizer_decode(input_ids, generated_ids, tokenizer, False)
 
     return output_text[0]
 
@@ -1171,12 +1141,10 @@ def recognize(models):
 
 
 def main():
-    # check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
-    # check_and_download_models(WEIGHT_VIS_PATH, MODEL_VIS_PATH, REMOTE_PATH)
-    # if PB_PATH is not None:
-    #     check_and_download_file(PB_PATH, REMOTE_PATH)
-    # if PB_VIS_PATH is not None:
-    #     check_and_download_file(PB_VIS_PATH, REMOTE_PATH)
+    check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
+    check_and_download_models(WEIGHT_VISION_PATH, MODEL_VISION_PATH, REMOTE_PATH)
+    check_and_download_file(PB_PATH, REMOTE_PATH)
+    check_and_download_file(PB_VISION_PATH, REMOTE_PATH)
 
     env_id = args.env_id
 
@@ -1207,7 +1175,6 @@ def main():
         )
         language_model = onnxruntime.InferenceSession(WEIGHT_PATH, providers=providers)
 
-    args.disable_ailia_tokenizer = True
     if args.disable_ailia_tokenizer:
         import transformers
 
