@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from io import StringIO
 from logging import getLogger
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import ailia
 import cv2
@@ -27,7 +27,6 @@ logger = getLogger(__name__)
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/qwen2.5_vl/"
 
 IMAGE_PATH = "demo.jpeg"
-SAVE_IMAGE_PATH = "output.png"
 
 COPY_BLOB_DATA = True
 INTERMEDIATE = True
@@ -37,7 +36,7 @@ INTERMEDIATE = True
 # Arguemnt Parser Config
 # ======================
 
-parser = get_base_parser("Qwen2.5-VL", IMAGE_PATH, SAVE_IMAGE_PATH, large_model=True)
+parser = get_base_parser("Qwen2.5-VL", IMAGE_PATH, None, large_model=True)
 parser.add_argument(
     "-p",
     "--prompt",
@@ -70,37 +69,25 @@ parser.add_argument(
     help="fps",
 )
 parser.add_argument(
-    "--disable_ailia_tokenizer", action="store_true", help="disable ailia tokenizer."
-)
-parser.add_argument(
-    "--fp16", action="store_true", help="use fp16 model (default : fp32 model)."
-)
-parser.add_argument(
     "--temperature",
     type=float,
-    default=0.01,
+    default=1e-6,
     help="temperature from generation_config.json",
-)
-parser.add_argument(
-    "--top_p",
-    type=float,
-    default=0.001,
-    help="top_p from generation_config.json",
 )
 parser.add_argument(
     "--top_k",
     type=int,
-    default=1,
+    default=50,
     help="top_k from generation_config.json",
 )
 parser.add_argument(
     "--max_length",
     type=int,
-    default=256,
+    default=3730,
     help="max_length for generation",
 )
 parser.add_argument(
-    "--normal", action="store_true", help="use normal model (default : opt model)."
+    "--disable_ailia_tokenizer", action="store_true", help="disable ailia tokenizer."
 )
 parser.add_argument("--onnx", action="store_true", help="execute onnxruntime version.")
 args = update_parser(parser)
@@ -601,6 +588,9 @@ def video_processor(videos):
 
 
 def logits_processor(input_ids, scores):
+    top_k = args.top_k
+    temperature = args.temperature
+
     penalty = 1.05
     # Convert to numpy if needed (assuming scores and input_ids are already numpy arrays)
     score = np.take_along_axis(scores, input_ids, axis=1)
@@ -609,10 +599,8 @@ def logits_processor(input_ids, scores):
     scores = scores.copy()
     np.put_along_axis(scores, input_ids, score, axis=1)
 
-    temperature = 1e-6
     scores = scores / temperature
 
-    top_k = 50
     top_k = min(top_k, scores.shape[-1])  # Safety check
     # Remove all tokens with a probability less than the last token of the top-k
     top_k_values = np.partition(scores, -top_k, axis=-1)[..., -top_k:]
@@ -845,6 +833,8 @@ def sample(
     pad_token_id = 151643
     image_token_id = 151655
     video_token_id = 151656
+    max_length = args.max_length
+
     if INTERMEDIATE:
         initial_ids = input_ids.copy()
 
@@ -1011,7 +1001,7 @@ def sample(
                 before_text = output_text
 
         unfinished_sequences = unfinished_sequences & ~stopping_criteria(
-            input_ids, max_length=3730
+            input_ids, max_length=max_length
         )
         this_peer_finished = np.max(unfinished_sequences) == 0
 
