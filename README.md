@@ -24,9 +24,10 @@ If you would like to try on your computer:
 [ailia-models wiki](https://deepwiki.com/ailia-ai/ailia-models)
 
 # Supported models
-395 models as of December 30, 2025
+396 models as of January 16, 2026
 
 # Latest update
+- 2026.01.16 Add embeddinggemma
 - 2025.12.30 Add demucs, latentsync
 - 2025.12.26 Add sadtalker
 - 2025.12.25 Add samurai, cotracker3 (ailia SDK 1.6.1)
