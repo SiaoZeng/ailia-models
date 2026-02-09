@@ -815,7 +815,7 @@ If you would like to try on your computer:
 | Model | Reference | Exported From | Supported Ailia Version | Blog |
 |------------:|:------------:|:------------:|:------------:|:------------:|
 | [informer2020](/time_series_forecasting/informer2020/) | [Informer: Beyond Efficient Transformer for Long Sequence Time-Series Forecasting (AAAI'21 Best Paper)](https://github.com/zhouhaoyi/Informer2020) | Pytorch | 1.2.10 and later ||
-| [timesfm](/time_series_forecasting/timesfm/) | [TimesFM](https://github.com/google-research/timesfm) | Pytorch | 1.2.16 and later ||
+| [timesfm](/time_series_forecasting/timesfm/) | [TimesFM](https://github.com/google-research/timesfm) | Pytorch | 1.2.16 and later | [JP](https://medium.com/axinc/timesfm-%E6%99%82%E7%B3%BB%E5%88%97%E4%BA%88%E6%B8%AC%E3%81%AE%E5%9F%BA%E7%9B%A4%E3%83%A2%E3%83%87%E3%83%AB-0a11fdefa319) |
 
 ## Vehicle recognition
 
