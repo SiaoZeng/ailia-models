@@ -689,6 +689,7 @@ If you would like to try on your computer:
 | [<img src="object_detection_3d/egonet/output.png" width=128px>](object_detection_3d/egonet/) |[egonet](/object_detection_3d/egonet/) | [EgoNet](https://github.com/Nicholasli1995/EgoNet) | Pytorch | 1.2.9 and later | |
 | [<img src="object_detection_3d/d4lcn/output.png" width=128px>](object_detection_3d/d4lcn/) |[d4lcn](/object_detection_3d/d4lcn/) | [D4LCN](https://github.com/dingmyu/D4LCN) | Pytorch | 1.2.9 and later | |
 | [<img src="object_detection_3d/did_m3d/output.png" width=128px>](object_detection_3d/did_m3d/) |[did_m3d](/object_detection_3d/did_m3d/) | [DID M3D](https://github.com/SPengLiang/DID-M3D) | Pytorch | 1.2.11 and later | |
+| [<img src="object_detection_3d/bevformer/output.png" width=128px>](object_detection_3d/bevformer/) |[bevformer](/object_detection_3d/bevformer/) | [BEVFormer](https://github.com/fundamentalvision/BEVFormer) | Pytorch | 1.2.9 and later | |
 
 ## Object tracking
 
