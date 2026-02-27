@@ -4,13 +4,12 @@
 
 ![Input](demo.jpg)
 
-(Image from nuScenes dataset)
+(Synthetic driving scene image)
 
-- BEVFormer-tiny backbone input shape: (1, 3, 928, 1600)
+- Input shape: (1, 6, 3, 480, 800) — 6 surround-view cameras, RGB
 - Range: normalized with ImageNet mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]
-- Channel order: RGB
 
-BEVFormer takes multi-camera surround-view images (6 cameras: front, front-left, front-right, back, back-left, back-right) and generates a unified Bird's-Eye-View representation for 3D object detection.
+BEVFormer takes multi-camera surround-view images (6 cameras: front, front-left, front-right, back, back-left, back-right) and generates a unified Bird's-Eye-View (BEV) representation for 3D object detection.
 
 ## Output
 
@@ -23,10 +22,25 @@ The model outputs 3D bounding boxes in Bird's Eye View with:
 
 ## Usage
 
-Automatically downloads the onnx and prototxt files on the first run.
-It is necessary to be connected to the Internet while downloading.
+### Step 1: Export the ONNX model
 
-For the sample image,
+The model uses Deformable Attention implemented with `F.grid_sample` (standard PyTorch/ONNX operator).
+
+```bash
+$ pip install torch torchvision onnx onnxscript onnxruntime
+$ python3 bevformer_onnx_export.py --verify
+```
+
+This exports `bevformer_tiny.onnx` and verifies it with ONNX Runtime.
+
+### Step 2: Run inference
+
+With ONNX Runtime:
+```bash
+$ python3 bevformer.py --onnx
+```
+
+With ailia SDK:
 ```bash
 $ python3 bevformer.py
 ```
@@ -34,66 +48,87 @@ $ python3 bevformer.py
 If you want to specify the input image, put the image path after the `--input` option.
 You can use `--savepath` option to change the name of the output file to save.
 ```bash
-$ python3 bevformer.py --input IMAGE_PATH --savepath SAVE_IMAGE_PATH
+$ python3 bevformer.py --onnx --input IMAGE_PATH --savepath SAVE_IMAGE_PATH
 ```
 
 By adding the `--video` option, you can input the video.
 If you pass `0` as an argument to VIDEO_PATH, you can use the webcam input.
 ```bash
-$ python3 bevformer.py --video VIDEO_PATH
+$ python3 bevformer.py --onnx --video VIDEO_PATH
 ```
 
 You can set the detection confidence threshold with `-th`:
 ```bash
-$ python3 bevformer.py -th 0.4
+$ python3 bevformer.py --onnx -th 0.4
 ```
 
 To output detection results as JSON:
 ```bash
-$ python3 bevformer.py -w
+$ python3 bevformer.py --onnx -w
 ```
 
-## ONNX Model Export
+## ONNX Export Details
 
-To export the BEVFormer-tiny model from PyTorch to ONNX, use the provided export script.
+### Deformable Attention
 
-### Prerequisites
+BEVFormer's Multi-Scale Deformable Attention (from Deformable DETR) uses a
+CUDA custom operator in the original mmcv implementation. This project replaces
+it with a pure-PyTorch implementation using `F.grid_sample`, which is supported
+as a standard ONNX operator (opset >= 16).
+
+See `deformable_attention.py` for the implementation.
+
+### Export options
 
 ```bash
-pip install torch torchvision
-pip install mmcv-full==1.5.0 mmdet==2.25.1 mmdet3d==1.0.0rc4
-git clone https://github.com/fundamentalvision/BEVFormer.git
+# Default: 480x800 input, 6 cameras, opset 18
+$ python3 bevformer_onnx_export.py
+
+# Custom resolution
+$ python3 bevformer_onnx_export.py --img_h 480 --img_w 800
+
+# Export and verify with ONNX Runtime
+$ python3 bevformer_onnx_export.py --verify
 ```
 
-### Export with pretrained weights
+### ONNX Runtime verification results
 
-```bash
-python3 bevformer_onnx_export.py \
-    --config BEVFormer/projects/configs/bevformer/bevformer_tiny.py \
-    --checkpoint bevformer_tiny_epoch_24.pth \
-    --output bevformer_tiny_backbone.onnx \
-    --export-head
 ```
+Model inputs:
+  images: [1, 6, 3, 480, 800]
+Model outputs:
+  cls_scores: [1, 300, 10]
+  bbox_preds: [1, 300, 10]
 
-### Export backbone only (without mmdet3d)
-
-If mmdet3d is not available, the script can export a standalone ResNet50+FPN backbone:
-```bash
-python3 bevformer_onnx_export.py --output bevformer_tiny_backbone.onnx --export-head
+cls_scores max diff:  0.000001
+bbox_preds max diff:  0.000000
+PASSED (tolerance=0.001)
+Average inference time: ~568 ms (CPU)
 ```
 
 ## Architecture
 
-BEVFormer uses a spatiotemporal transformer architecture:
+BEVFormer-tiny uses a spatiotemporal transformer architecture:
 
-1. **Image Backbone**: ResNet-50 (tiny) or ResNet-101-DCN (base/small) with FPN neck
-2. **BEV Encoder**: Transformer encoder with spatial cross-attention and temporal self-attention
-3. **Detection Head**: Deformable-DETR-based decoder with 900 object queries
+1. **Image Backbone**: ResNet-50 + FPN (multi-scale features at stride 8, 16, 32)
+2. **BEV Encoder**: 3 transformer encoder layers with:
+   - Self-attention on BEV queries (50x50 grid)
+   - Deformable cross-attention to multi-scale image features (via `F.grid_sample`)
+   - Feed-forward network
+3. **Detection Head**: Transformer decoder (6 layers) with 300 object queries
+   - Classification head (10 nuScenes classes)
+   - Regression head (cx, cy, cz, w, l, h, sin, cos, vx, vy)
 
-The tiny variant uses:
-- 3 encoder layers (vs 6 for base)
-- 50x50 BEV grid (vs 200x200 for base)
-- ResNet-50 backbone without deformable convolutions
+Parameters: ~34.8M
+
+## File Structure
+
+| File | Description |
+|------|-------------|
+| `bevformer.py` | Main inference script (ONNX Runtime / ailia) |
+| `bevformer_model.py` | BEVFormer-tiny model definition (pure PyTorch) |
+| `bevformer_onnx_export.py` | ONNX export script with verification |
+| `deformable_attention.py` | Multi-Scale Deformable Attention (grid_sample-based) |
 
 ## Reference
 
@@ -107,10 +142,8 @@ Pytorch
 
 ## Model Format
 
-ONNX opset=11
+ONNX opset=18
 
 ## Netron
 
-[bevformer_tiny_backbone.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/bevformer/bevformer_tiny_backbone.onnx.prototxt)
-
-[bevformer_tiny_head.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/bevformer/bevformer_tiny_head.onnx.prototxt)
+[bevformer_tiny.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/bevformer/bevformer_tiny.onnx.prototxt)

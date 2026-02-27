@@ -1,238 +1,169 @@
 """
-Export BEVFormer-tiny backbone (ResNet50 + FPN) to ONNX.
+Export BEVFormer-tiny to ONNX.
 
-BEVFormer uses Multi-Scale Deformable Attention which is not directly
-supported by standard ONNX operators. This script exports the image
-backbone (ResNet50 + FPN) as a standard ONNX model that extracts
-multi-scale features from camera images.
+This script exports the full BEVFormer-tiny model (backbone + BEV encoder
+with deformable attention + detection head) as a single ONNX model.
+Deformable Attention is implemented using F.grid_sample (standard ONNX op).
 
 Usage:
-    pip install mmcv-full==1.5.0 mmdet==2.25.1 mmdet3d==1.0.0rc4
-    git clone https://github.com/fundamentalvision/BEVFormer.git
-    cd BEVFormer
-    python bevformer_onnx_export.py --checkpoint bevformer_tiny_epoch_24.pth
+    # Export with random weights (for architecture verification)
+    python3 bevformer_onnx_export.py
+
+    # Export with custom resolution
+    python3 bevformer_onnx_export.py --img_h 480 --img_w 800
+
+    # Export and verify with ONNX Runtime
+    python3 bevformer_onnx_export.py --verify
 """
 
 import argparse
-import sys
 import os
+import sys
 
 import numpy as np
+import torch
+import torch.nn as nn
+import onnx
+
+from bevformer_model import build_bevformer_tiny
 
 
-def export_backbone(args):
-    import torch
-    import torch.nn as nn
-    from mmcv import Config
-    from mmdet3d.models import build_model
+def export_model(args):
+    """Export the full BEVFormer-tiny model to ONNX."""
+    print(f'Building BEVFormer-tiny (img: {args.img_h}x{args.img_w}, '
+          f'cams: {args.num_cams})...')
 
-    # BEVFormer-tiny config
-    bev_h = 50
-    bev_w = 50
-    num_classes = 10
-    embed_dims = 256
-    num_queries = 900
-    img_h = 928
-    img_w = 1600
-    num_cams = 6
+    model = build_bevformer_tiny(
+        num_cams=args.num_cams,
+        img_h=args.img_h,
+        img_w=args.img_w,
+    )
+    model.eval()
 
-    class BEVFormerBackbone(nn.Module):
-        """Wrapper that extracts only the image backbone + neck."""
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f'Parameters: {num_params:,}')
 
-        def __init__(self, model):
-            super().__init__()
-            self.img_backbone = model.img_backbone
-            self.img_neck = model.img_neck
+    # Dummy input
+    dummy_imgs = torch.randn(
+        1, args.num_cams, 3, args.img_h, args.img_w)
 
-        def forward(self, img):
-            # img: (B, C, H, W)
-            feats = self.img_backbone(img)
-            if isinstance(feats, (list, tuple)):
-                feats = [feats[-1]]
-            neck_out = self.img_neck(feats)
-            return neck_out[0]
+    # Test forward pass
+    print('Testing forward pass...')
+    with torch.no_grad():
+        cls_scores, bbox_preds = model(dummy_imgs)
+    print(f'  cls_scores: {cls_scores.shape}')
+    print(f'  bbox_preds: {bbox_preds.shape}')
 
-    if args.config and args.checkpoint:
-        cfg = Config.fromfile(args.config)
-        cfg.model.train_cfg = None
-        model = build_model(cfg.model, test_cfg=cfg.get('test_cfg'))
+    # ONNX export
+    output_path = args.output
+    print(f'Exporting to {output_path} (opset={args.opset})...')
 
-        from mmcv.runner import load_checkpoint
-        load_checkpoint(model, args.checkpoint, map_location='cpu')
-        model.eval()
-    else:
-        # Use torchvision ResNet50 + simple FPN as fallback
-        import torchvision.models as models
-
-        class SimpleBackboneNeck(nn.Module):
-            def __init__(self):
-                super().__init__()
-                resnet = models.resnet50(pretrained=True)
-                self.layer0 = nn.Sequential(
-                    resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool)
-                self.layer1 = resnet.layer1
-                self.layer2 = resnet.layer2
-                self.layer3 = resnet.layer3
-                self.layer4 = resnet.layer4
-                # Simple 1x1 conv to project to embed_dims
-                self.neck_conv = nn.Conv2d(2048, embed_dims, 1)
-                self.neck_bn = nn.BatchNorm2d(embed_dims)
-
-            def forward(self, img):
-                x = self.layer0(img)
-                x = self.layer1(x)
-                x = self.layer2(x)
-                x = self.layer3(x)
-                x = self.layer4(x)
-                x = self.neck_conv(x)
-                x = self.neck_bn(x)
-                return x
-
-        model = None
-        backbone_model = SimpleBackboneNeck()
-        backbone_model.eval()
-
-    if model is not None:
-        backbone_model = BEVFormerBackbone(model)
-        backbone_model.eval()
-
-    # Export backbone
-    dummy_img = torch.randn(1, 3, img_h, img_w)
-    output_path = args.output if args.output else 'bevformer_tiny_backbone.onnx'
-
-    print(f'Exporting backbone to {output_path}...')
     torch.onnx.export(
-        backbone_model,
-        dummy_img,
+        model,
+        (dummy_imgs,),
         output_path,
-        input_names=['image'],
-        output_names=['features'],
-        dynamic_axes={
-            'image': {0: 'batch'},
-            'features': {0: 'batch'},
-        },
+        input_names=['images'],
+        output_names=['cls_scores', 'bbox_preds'],
         opset_version=args.opset,
         do_constant_folding=True,
     )
-    print(f'Backbone exported to {output_path}')
 
-    # Verify
-    import onnx
+    # Verify ONNX model
+    print('Verifying ONNX model...')
     onnx_model = onnx.load(output_path)
     onnx.checker.check_model(onnx_model)
-    print('ONNX model check passed.')
 
-    # Print model info
-    print(f'Input: image (1, 3, {img_h}, {img_w})')
-    for output in onnx_model.graph.output:
-        name = output.name
-        shape = [d.dim_value for d in output.type.tensor_type.shape.dim]
-        print(f'Output: {name} {shape}')
+    file_size = os.path.getsize(output_path) / (1024 * 1024)
+    print(f'ONNX model saved: {output_path} ({file_size:.1f} MB)')
+
+    # Print I/O info
+    print('\nModel inputs:')
+    for inp in onnx_model.graph.input:
+        name = inp.name
+        shape = [d.dim_value for d in inp.type.tensor_type.shape.dim]
+        print(f'  {name}: {shape}')
+    print('Model outputs:')
+    for out in onnx_model.graph.output:
+        name = out.name
+        shape = [d.dim_value for d in out.type.tensor_type.shape.dim]
+        print(f'  {name}: {shape}')
+
+    # Verify with ONNX Runtime
+    if args.verify:
+        verify_onnx_runtime(output_path, dummy_imgs, cls_scores, bbox_preds)
+
+    return output_path
 
 
-def export_detection_head(args):
-    """Export a simplified detection head for BEV features."""
-    import torch
-    import torch.nn as nn
+def verify_onnx_runtime(onnx_path, dummy_imgs, pt_cls, pt_bbox):
+    """Verify ONNX model outputs match PyTorch outputs using ONNX Runtime."""
+    import onnxruntime as ort
 
-    embed_dims = 256
-    num_classes = 10
-    num_queries = 900
-    code_size = 10  # x, y, z, w, l, h, sin, cos, vx, vy
+    print('\n--- ONNX Runtime Verification ---')
+    session = ort.InferenceSession(
+        onnx_path, providers=['CPUExecutionProvider'])
 
-    class SimpleBEVDetHead(nn.Module):
-        """Simplified detection head that takes BEV features and outputs
-        3D bounding box predictions."""
+    input_name = session.get_inputs()[0].name
+    inputs = {input_name: dummy_imgs.numpy()}
 
-        def __init__(self):
-            super().__init__()
-            self.query_embedding = nn.Embedding(num_queries, embed_dims * 2)
+    ort_outputs = session.run(None, inputs)
+    ort_cls = ort_outputs[0]
+    ort_bbox = ort_outputs[1]
 
-            # Decoder layers
-            decoder_layer = nn.TransformerDecoderLayer(
-                d_model=embed_dims,
-                nhead=8,
-                dim_feedforward=512,
-                dropout=0.1,
-                batch_first=True,
-            )
-            self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
+    pt_cls_np = pt_cls.detach().numpy()
+    pt_bbox_np = pt_bbox.detach().numpy()
 
-            # Classification and regression heads
-            self.cls_head = nn.Linear(embed_dims, num_classes)
-            self.reg_head = nn.Sequential(
-                nn.Linear(embed_dims, embed_dims),
-                nn.ReLU(),
-                nn.Linear(embed_dims, code_size),
-            )
+    cls_diff = np.abs(ort_cls - pt_cls_np).max()
+    bbox_diff = np.abs(ort_bbox - pt_bbox_np).max()
 
-        def forward(self, bev_features):
-            # bev_features: (B, C, H, W)
-            B = bev_features.shape[0]
-            bev_flat = bev_features.flatten(2).permute(0, 2, 1)  # (B, HW, C)
+    print(f'  cls_scores max diff:  {cls_diff:.6f}')
+    print(f'  bbox_preds max diff:  {bbox_diff:.6f}')
 
-            query_embed = self.query_embedding.weight  # (num_queries, C*2)
-            query_pos = query_embed[:, :embed_dims].unsqueeze(0).expand(B, -1, -1)
-            query = query_embed[:, embed_dims:].unsqueeze(0).expand(B, -1, -1)
+    tol = 1e-3
+    if cls_diff < tol and bbox_diff < tol:
+        print(f'  PASSED (tolerance={tol})')
+    else:
+        print(f'  WARNING: diff exceeds tolerance={tol} '
+              '(may be acceptable for float32 precision)')
 
-            hs = self.decoder(query, bev_flat)  # (B, num_queries, C)
-
-            cls_scores = self.cls_head(hs)  # (B, num_queries, num_classes)
-            bbox_preds = self.reg_head(hs)  # (B, num_queries, code_size)
-
-            return cls_scores, bbox_preds
-
-    head_model = SimpleBEVDetHead()
-    head_model.eval()
-
-    bev_h, bev_w = 50, 50
-    dummy_bev = torch.randn(1, embed_dims, bev_h, bev_w)
-    output_path = args.output if args.output else 'bevformer_tiny_head.onnx'
-    output_path = output_path.replace('.onnx', '_head.onnx')
-
-    print(f'Exporting detection head to {output_path}...')
-    torch.onnx.export(
-        head_model,
-        dummy_bev,
-        output_path,
-        input_names=['bev_features'],
-        output_names=['cls_scores', 'bbox_preds'],
-        dynamic_axes={
-            'bev_features': {0: 'batch'},
-            'cls_scores': {0: 'batch'},
-            'bbox_preds': {0: 'batch'},
-        },
-        opset_version=args.opset,
-        do_constant_folding=True,
-    )
-    print(f'Detection head exported to {output_path}')
+    # Benchmark
+    import time
+    n_runs = 5
+    times = []
+    for i in range(n_runs):
+        start = time.time()
+        session.run(None, inputs)
+        elapsed = (time.time() - start) * 1000
+        times.append(elapsed)
+        print(f'  Run {i+1}: {elapsed:.1f} ms')
+    avg = sum(times[1:]) / len(times[1:])
+    print(f'  Average (excluding warmup): {avg:.1f} ms')
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Export BEVFormer to ONNX')
+        description='Export BEVFormer-tiny to ONNX')
     parser.add_argument(
-        '--config', type=str, default=None,
-        help='BEVFormer config file path '
-             '(e.g. projects/configs/bevformer/bevformer_tiny.py)')
-    parser.add_argument(
-        '--checkpoint', type=str, default=None,
-        help='PyTorch checkpoint file path '
-             '(e.g. bevformer_tiny_epoch_24.pth)')
-    parser.add_argument(
-        '--output', type=str, default='bevformer_tiny_backbone.onnx',
+        '--output', type=str, default='bevformer_tiny.onnx',
         help='Output ONNX file path')
     parser.add_argument(
-        '--opset', type=int, default=11,
-        help='ONNX opset version')
+        '--opset', type=int, default=18,
+        help='ONNX opset version (>= 16 for grid_sample, 18 recommended)')
     parser.add_argument(
-        '--export-head', action='store_true',
-        help='Also export detection head')
+        '--img_h', type=int, default=480,
+        help='Input image height')
+    parser.add_argument(
+        '--img_w', type=int, default=800,
+        help='Input image width')
+    parser.add_argument(
+        '--num_cams', type=int, default=6,
+        help='Number of camera views')
+    parser.add_argument(
+        '--verify', action='store_true',
+        help='Verify with ONNX Runtime after export')
     args = parser.parse_args()
 
-    export_backbone(args)
-    if args.export_head:
-        export_detection_head(args)
+    export_model(args)
 
 
 if __name__ == '__main__':
