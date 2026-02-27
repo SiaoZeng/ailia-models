@@ -68,6 +68,17 @@ def export_model(args):
         do_constant_folding=True,
     )
 
+    # Merge external data into a single .onnx file
+    print('Merging weights into single ONNX file...')
+    onnx_model = onnx.load(output_path, load_external_data=True)
+    onnx.save(onnx_model, output_path, save_as_external_data=False)
+
+    # Remove leftover .data file
+    data_path = output_path + '.data'
+    if os.path.exists(data_path):
+        os.remove(data_path)
+        print(f'Removed {data_path}')
+
     # Verify ONNX model
     print('Verifying ONNX model...')
     onnx_model = onnx.load(output_path)

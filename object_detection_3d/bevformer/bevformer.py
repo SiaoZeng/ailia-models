@@ -473,11 +473,7 @@ def main():
         import onnxruntime as ort
         logger.info('Using ONNX Runtime')
 
-        if not os.path.exists(WEIGHT_PATH):
-            logger.info(
-                f'{WEIGHT_PATH} not found locally. '
-                'Generate it with: python3 bevformer_onnx_export.py')
-            sys.exit(1)
+        check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
 
         session = ort.InferenceSession(
             WEIGHT_PATH, providers=['CPUExecutionProvider'])
