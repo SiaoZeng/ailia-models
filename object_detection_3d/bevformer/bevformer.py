@@ -30,9 +30,9 @@ logger = getLogger(__name__)
 # Parameters
 # ======================
 
-WEIGHT_PATH = 'bevformer_tiny.onnx'
-MODEL_PATH = 'bevformer_tiny.onnx.prototxt'
-REMOTE_PATH = 'https://storage.googleapis.com/ailia-models/bevformer/'
+WEIGHT_PATH = 'bevformer_tiny_v2.onnx'
+MODEL_PATH = 'bevformer_tiny_v2.onnx.prototxt'
+REMOTE_PATH = 'https://storage.googleapis.com/ailia-uploader/bevformer/'
 
 CAMERA_NAMES = [
     'CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT',
@@ -57,7 +57,7 @@ NUM_CLASSES = 10
 IMG_MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
 IMG_STD = np.array([58.395, 57.12, 57.375], dtype=np.float32)
 
-THRESHOLD = 0.05
+THRESHOLD = 0.3
 MAX_DETECTIONS = 20
 
 # nuScenes detection classes
@@ -84,31 +84,43 @@ CLASS_COLORS_RGB = [
     tuple(c[::-1]) for c in CLASS_COLORS_BGR
 ]
 
-# Approximate nuScenes camera parameters for 3D bbox projection
-# Ego frame: x=right, y=forward, z=up
-# Camera frame: x=right, y=down, z=forward
-CAMERA_INTRINSIC = np.array([
-    [1266.4, 0, 816.3],
-    [0, 1266.4, 491.5],
-    [0, 0, 1],
-], dtype=np.float64)
-
-# Camera yaw angles (degrees from forward/+y, CCW positive)
-CAMERA_YAWS_DEG = [0, 55, -55, 180, 110, -110]
-
-# Camera positions in ego frame [x_right, y_forward, z_up]
-CAMERA_POSITIONS = [
-    [0.0, 1.7, 1.5],    # CAM_FRONT
-    [0.5, 1.7, 1.5],    # CAM_FRONT_LEFT
-    [-0.5, 1.7, 1.5],   # CAM_FRONT_RIGHT
-    [0.0, 0.0, 1.5],    # CAM_BACK
-    [0.5, 1.0, 1.5],    # CAM_BACK_LEFT
-    [-0.5, 1.0, 1.5],   # CAM_BACK_RIGHT
-]
-
-# Original nuScenes image size (for projection)
-NUSCENES_IMG_W = 1600
-NUSCENES_IMG_H = 900
+# Exact lidar2img matrices for nuScenes v1.0-mini sample
+# ca9a282c9e77460f8360f564131a8af5 (first keyframe).
+# Computed from calibrated_sensor and ego_pose metadata:
+#   lidar2img = viewpad(intrinsic) @ inv(cam2global) @ lidar2global
+# Camera order: FRONT, FRONT_LEFT, FRONT_RIGHT, BACK, BACK_LEFT, BACK_RIGHT
+LIDAR2IMG = np.array([
+    # CAM_FRONT
+    [[1263.4881310658986, 820.4207963981752, 24.73538332651016, -328.9915887805],
+     [6.937362876127535, 516.2185427762092, -1256.527762123457, -627.647274771842],
+     [-0.003542212411213258, 0.999802298499569, 0.019565700759667102, -0.4292221797941238],
+     [0.0, 0.0, 0.0, 1.0]],
+    # CAM_FRONT_LEFT
+    [[51.735891794922004, 1516.134104097482, 38.203188136822604, -248.1182537451171],
+     [-389.6552231440645, 306.77311600862845, -1266.3831357913477, -671.3391927000974],
+     [-0.819554247797848, 0.5728736473548813, 0.012108636703708407, -0.5106567477259887],
+     [0.0, 0.0, 0.0, 1.0]],
+    # CAM_FRONT_RIGHT
+    [[1369.3507087252467, -605.4496755462368, -29.29658020778624, -469.1855640048184],
+     [400.13215148803295, 304.8248168234193, -1257.8030709918235, -727.3929916573209],
+     [0.8340582831918065, 0.5516517112865864, 0.005212453714103082, -0.6078003270167756],
+     [0.0, 0.0, 0.0, 1.0]],
+    # CAM_BACK
+    [[-813.043166065008, -825.3453104780422, -14.480529239691625, -837.8834242142998],
+     [5.7940717606915175, -475.4852444033304, -812.914062090951, -710.9691029240383],
+     [-0.004668203505499156, -0.9999586913425677, -0.007798941241917679, -1.007525480580398],
+     [0.0, 0.0, 0.0, 1.0]],
+    # CAM_BACK_LEFT
+    [[-1149.5392303247443, 940.9229648721968, 8.063046726400245, -642.0285223586698],
+     [-442.2411716483507, -114.56587151389417, -1270.2458400363512, -520.4483240071451],
+     [-0.9481973029110318, -0.3163290533386733, -0.029288304254537875, -0.43581627449702864],
+     [0.0, 0.0, 0.0, 1.0]],
+    # CAM_BACK_RIGHT
+    [[304.42313405171575, -1463.425610380557, -61.18949508469049, -322.7224958717359],
+     [461.55255282524763, -127.43022641982672, -1268.1888147593554, -589.4029597434226],
+     [0.9340952306605895, -0.35649516421388244, -0.019424158907449675, -0.4928893159585641],
+     [0.0, 0.0, 0.0, 1.0]],
+], dtype=np.float64)  # (6, 4, 4)
 
 
 # ======================
@@ -263,58 +275,45 @@ def post_process(cls_scores, bbox_preds, threshold):
     return detections
 
 
-def get_ego_to_cam_rotation(yaw_deg):
-    """Get rotation matrix from ego frame to camera frame.
+def project_3d_to_camera(points_3d, cam_idx, img_w, img_h):
+    """Project 3D points (lidar frame) to camera image coordinates.
+
+    Uses the exact lidar2img matrices from nuScenes calibration.
 
     Args:
-        yaw_deg: camera yaw in degrees (from +y/forward, CCW positive)
-
-    Returns:
-        3x3 rotation matrix
-    """
-    theta = np.radians(yaw_deg)
-    c, s = np.cos(theta), np.sin(theta)
-    # R = R_ego2cam_front @ R_z(-theta)
-    return np.array([
-        [c, s, 0],
-        [0, 0, -1],
-        [-s, c, 0],
-    ])
-
-
-def project_3d_to_camera(points_3d, cam_idx):
-    """Project 3D points (ego frame) to camera image coordinates.
-
-    Args:
-        points_3d: (N, 3) points in ego frame
+        points_3d: (N, 3) points in lidar frame
         cam_idx: camera index (0-5)
+        img_w: displayed image width (for bounds checking)
+        img_h: displayed image height (for bounds checking)
 
     Returns:
-        pts_2d: (N, 2) image coordinates
+        pts_2d: (N, 2) image coordinates (in original 1600x900 space,
+                scaled to displayed image size)
         valid: (N,) boolean mask for points in front of camera and in image
     """
-    R = get_ego_to_cam_rotation(CAMERA_YAWS_DEG[cam_idx])
-    t = np.array(CAMERA_POSITIONS[cam_idx])
+    N = len(points_3d)
+    # Homogeneous coordinates
+    pts_h = np.concatenate([points_3d, np.ones((N, 1))], axis=1)  # (N, 4)
 
-    # Transform to camera frame
-    pts_cam = (R @ (points_3d - t).T).T  # (N, 3)
+    l2i = LIDAR2IMG[cam_idx]  # (4, 4)
+    proj = (l2i @ pts_h.T).T  # (N, 4)
 
-    # Check if points are in front of camera
-    depth = pts_cam[:, 2]
+    depth = proj[:, 2]
     in_front = depth > 0.1
 
-    # Project to image
-    pts_2d = np.zeros((len(points_3d), 2))
+    pts_2d = np.zeros((N, 2))
     if np.any(in_front):
-        proj = CAMERA_INTRINSIC @ pts_cam[in_front].T  # (3, M)
-        pts_2d[in_front, 0] = proj[0] / proj[2]
-        pts_2d[in_front, 1] = proj[1] / proj[2]
+        pts_2d[in_front, 0] = proj[in_front, 0] / depth[in_front]
+        pts_2d[in_front, 1] = proj[in_front, 1] / depth[in_front]
 
-    # Check if projected points are within image bounds
+    # Scale from original 1600x900 to displayed image size
+    pts_2d[:, 0] *= img_w / 1600.0
+    pts_2d[:, 1] *= img_h / 900.0
+
     in_image = (
         in_front &
-        (pts_2d[:, 0] >= 0) & (pts_2d[:, 0] < NUSCENES_IMG_W) &
-        (pts_2d[:, 1] >= 0) & (pts_2d[:, 1] < NUSCENES_IMG_H)
+        (pts_2d[:, 0] >= 0) & (pts_2d[:, 0] < img_w) &
+        (pts_2d[:, 1] >= 0) & (pts_2d[:, 1] < img_h)
     )
 
     return pts_2d, in_image
@@ -356,9 +355,10 @@ def get_3d_box_corners(center, size, yaw):
     return corners
 
 
-def draw_3d_bbox_on_camera(ax, corners_3d, cam_idx, color, score):
+def draw_3d_bbox_on_camera(ax, corners_3d, cam_idx, color, score,
+                           img_w, img_h):
     """Draw projected 3D bounding box on a camera image axis."""
-    pts_2d, valid = project_3d_to_camera(corners_3d, cam_idx)
+    pts_2d, valid = project_3d_to_camera(corners_3d, cam_idx, img_w, img_h)
 
     for i, j in BOX_EDGES:
         if valid[i] and valid[j]:
@@ -425,7 +425,8 @@ def draw_bev_detections(detections, imgs=None):
             color = np.array(CLASS_COLORS_RGB[cls_id]) / 255.0
             for cam_idx, ax in cam_axes:
                 draw_3d_bbox_on_camera(
-                    ax, corners, cam_idx, color, det['score'])
+                    ax, corners, cam_idx, color, det['score'],
+                    imgs[cam_idx].shape[1], imgs[cam_idx].shape[0])
 
         ax_bev = fig.add_subplot(gs[:, 3])
     else:

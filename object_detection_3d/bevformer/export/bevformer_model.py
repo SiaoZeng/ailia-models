@@ -395,7 +395,7 @@ class MSDeformAttnNoOutputProj(nn.Module):
         """
         Args:
             query: (N, Lq, C)
-            reference_points: (N, Lq, n_levels, 2)
+            reference_points: (N, Lq, D, 2) where D = num_Z_anchors
             input_flatten: (N, sum(Hi*Wi), C)
             input_spatial_shapes: list of (H, W)
 
@@ -405,6 +405,8 @@ class MSDeformAttnNoOutputProj(nn.Module):
         from deformable_attention import multi_scale_deformable_attn_pytorch
 
         N, Lq, _ = query.shape
+        num_Z_anchors = reference_points.shape[2]
+
         value = self.value_proj(input_flatten)
         value = value.view(N, -1, self.n_heads, self.head_dim)
 
@@ -420,9 +422,23 @@ class MSDeformAttnNoOutputProj(nn.Module):
             device=query.device)
         offset_normalizer = spatial_shapes_t.flip(-1)[
             None, None, None, :, None, :]
-        sampling_locations = (
-            reference_points[:, :, None, :, None, :]
-            + sampling_offsets / offset_normalizer)
+
+        # Distribute sampling offsets across Z-anchors (matching original
+        # MSDeformableAttention3D): n_points offsets are split into
+        # (n_points // D) per Z-anchor.
+        # reference_points: (N, Lq, D, 2) -> (N, Lq, 1, 1, 1, D, 2)
+        ref_pts = reference_points[:, :, None, None, None, :, :]
+
+        # sampling_offsets: (N, Lq, H, L, P, 2) -> (N, Lq, H, L, P//D, D, 2)
+        sampling_offsets = sampling_offsets / offset_normalizer
+        sampling_offsets = sampling_offsets.view(
+            N, Lq, self.n_heads, self.n_levels,
+            self.n_points // num_Z_anchors, num_Z_anchors, 2)
+
+        sampling_locations = ref_pts + sampling_offsets
+        # -> (N, Lq, H, L, P//D, D, 2) -> flatten to (N, Lq, H, L, P, 2)
+        sampling_locations = sampling_locations.view(
+            N, Lq, self.n_heads, self.n_levels, self.n_points, 2)
 
         output = multi_scale_deformable_attn_pytorch(
             value, input_spatial_shapes,
@@ -451,7 +467,7 @@ class SpatialCrossAttention(nn.Module):
         self.num_cams = num_cams
         self.n_levels = n_levels
 
-    def forward(self, query, reference_points_cam, value,
+    def forward(self, query, reference_points_cam, bev_mask, value,
                 spatial_shapes, num_cams=6):
         """
         Args:
@@ -459,6 +475,7 @@ class SpatialCrossAttention(nn.Module):
             reference_points_cam: (num_cams, B, num_queries, D, 2)
                 2D reference points for each camera, normalized to [0, 1]
                 D = num_points_in_pillar (e.g. 4)
+            bev_mask: (num_cams, B, num_queries, D) - visibility mask
             value: (B*num_cams, sum(Hi*Wi), C) - multi-cam flattened features
             spatial_shapes: list of (H, W) tuples
             num_cams: number of cameras
@@ -470,7 +487,11 @@ class SpatialCrossAttention(nn.Module):
 
         # Per-camera deformable attention and accumulation
         slots = torch.zeros_like(query)  # (B, num_queries, C)
-        count = torch.zeros(B, num_queries, 1, device=query.device)
+
+        # Compute per-query visibility: a query is visible in a camera if
+        # ANY of its D Z-anchors are visible
+        # bev_mask: (num_cams, B, nq, D)
+        vis = bev_mask.sum(-1) > 0  # (num_cams, B, nq)
 
         for cam_idx in range(num_cams):
             # Get this camera's features: (B, L, C)
@@ -479,20 +500,19 @@ class SpatialCrossAttention(nn.Module):
             # Get this camera's reference points: (B, num_queries, D, 2)
             ref_pts = reference_points_cam[cam_idx]  # (B, nq, D, 2)
 
-            # Average across D (pillar depth) to get single ref point,
-            # then expand to n_levels for the deformable attention
-            ref_pts_avg = ref_pts.mean(dim=2)  # (B, nq, 2)
-            ref_pts_lvl = ref_pts_avg.unsqueeze(2).expand(
-                -1, -1, self.n_levels, -1)  # (B, nq, n_levels, 2)
-
-            # Apply deformable attention for this camera
+            # Apply deformable attention with D Z-anchors
             out = self.deformable_attention(
-                query, ref_pts_lvl, cam_value, spatial_shapes)
-            slots = slots + out
-            count = count + 1.0
+                query, ref_pts, cam_value, spatial_shapes)
 
-        # Average across cameras
-        slots = slots / count.clamp(min=1.0)
+            # Mask out invisible queries
+            cam_vis = vis[cam_idx]  # (B, nq)
+            out = out * cam_vis.unsqueeze(-1).float()
+            slots = slots + out
+
+        # Average across visible cameras per query
+        count = vis.permute(1, 2, 0).sum(-1)  # (B, nq)
+        count = count.clamp(min=1.0)
+        slots = slots / count.unsqueeze(-1)
         slots = self.output_proj(slots)
         return slots
 
@@ -573,8 +593,8 @@ class BEVEncoderLayer(nn.Module):
         ])
 
     def forward(self, bev_queries, img_feats_flat, bev_ref_points,
-                reference_points_cam, bev_spatial_shapes, cross_spatial_shapes,
-                bev_pos=None, num_cams=6):
+                reference_points_cam, bev_mask, bev_spatial_shapes,
+                cross_spatial_shapes, bev_pos=None, num_cams=6):
         """
         Args:
             bev_queries: (B, bev_h*bev_w, C)
@@ -582,6 +602,7 @@ class BEVEncoderLayer(nn.Module):
             bev_ref_points: (B, bev_h*bev_w, 1, 2) ref points for self-attn
             reference_points_cam: (num_cams, B, bev_h*bev_w, D, 2)
                 projected reference points per camera
+            bev_mask: (num_cams, B, bev_h*bev_w, D) visibility mask
             bev_spatial_shapes: [(bev_h, bev_w)] for self-attn
             cross_spatial_shapes: list of (H, W) for cross-attn levels
             bev_pos: (B, bev_h*bev_w, C) positional encoding
@@ -612,7 +633,7 @@ class BEVEncoderLayer(nn.Module):
             query_input = query_input + bev_pos
         # Use camera-aware cross-attention with image features
         bev_queries_out = self.attentions[1](
-            query_input, reference_points_cam, img_feats_flat,
+            query_input, reference_points_cam, bev_mask, img_feats_flat,
             cross_spatial_shapes, num_cams=num_cams)
         bev_queries = self.norms[1](residual + bev_queries_out)
 
@@ -657,13 +678,13 @@ class BEVEncoder(nn.Module):
         ])
 
     def forward(self, bev_queries, img_feats_flat, bev_ref_points,
-                reference_points_cam, bev_spatial_shapes, cross_spatial_shapes,
-                bev_pos=None, num_cams=6):
+                reference_points_cam, bev_mask, bev_spatial_shapes,
+                cross_spatial_shapes, bev_pos=None, num_cams=6):
         for layer in self.layers:
             bev_queries = layer(
                 bev_queries, img_feats_flat, bev_ref_points,
-                reference_points_cam, bev_spatial_shapes, cross_spatial_shapes,
-                bev_pos=bev_pos, num_cams=num_cams)
+                reference_points_cam, bev_mask, bev_spatial_shapes,
+                cross_spatial_shapes, bev_pos=bev_pos, num_cams=num_cams)
         return bev_queries
 
 
@@ -961,59 +982,60 @@ class PerceptionTransformer(nn.Module):
 
     @staticmethod
     def get_default_lidar2img(num_cams=6, device='cpu'):
-        """Compute default lidar2img matrices for typical nuScenes camera setup.
+        """Return lidar2img matrices for nuScenes v1.0-mini sample
+        ca9a282c9e77460f8360f564131a8af5 (first keyframe).
+
+        Computed from the calibrated_sensor and ego_pose metadata:
+            lidar2img = viewpad(intrinsic) @ inv(cam2global) @ lidar2global
+
+        Camera order: FRONT, FRONT_LEFT, FRONT_RIGHT, BACK, BACK_LEFT, BACK_RIGHT
 
         Returns:
             lidar2img: (1, num_cams, 4, 4) tensor
         """
-        import numpy as np
-
-        # Approximate nuScenes camera intrinsics
-        fx, fy = 1266.4, 1266.4
-        cx, cy = 816.3, 491.5
-
-        intrinsic = np.array([
-            [fx, 0, cx, 0],
-            [0, fy, cy, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1],
-        ], dtype=np.float64)
-
-        # Camera yaw angles (degrees from +y/forward, CCW positive)
-        yaws = [0, 55, -55, 180, 110, -110]
-        # Camera positions in ego frame [x_right, y_forward, z_up]
-        positions = [
-            [0.0, 1.7, 1.5],    # CAM_FRONT
-            [0.5, 1.7, 1.5],    # CAM_FRONT_LEFT
-            [-0.5, 1.7, 1.5],   # CAM_FRONT_RIGHT
-            [0.0, 0.0, 1.5],    # CAM_BACK
-            [0.5, 1.0, 1.5],    # CAM_BACK_LEFT
-            [-0.5, 1.0, 1.5],   # CAM_BACK_RIGHT
+        # fmt: off
+        lidar2img_list = [
+            # CAM_FRONT
+            [[1263.4881310658986, 820.4207963981752, 24.73538332651016, -328.9915887805],
+             [6.937362876127535, 516.2185427762092, -1256.527762123457, -627.647274771842],
+             [-0.003542212411213258, 0.999802298499569, 0.019565700759667102, -0.4292221797941238],
+             [0.0, 0.0, 0.0, 1.0]],
+            # CAM_FRONT_LEFT
+            [[51.735891794922004, 1516.134104097482, 38.203188136822604, -248.1182537451171],
+             [-389.6552231440645, 306.77311600862845, -1266.3831357913477, -671.3391927000974],
+             [-0.819554247797848, 0.5728736473548813, 0.012108636703708407, -0.5106567477259887],
+             [0.0, 0.0, 0.0, 1.0]],
+            # CAM_FRONT_RIGHT
+            [[1369.3507087252467, -605.4496755462368, -29.29658020778624, -469.1855640048184],
+             [400.13215148803295, 304.8248168234193, -1257.8030709918235, -727.3929916573209],
+             [0.8340582831918065, 0.5516517112865864, 0.005212453714103082, -0.6078003270167756],
+             [0.0, 0.0, 0.0, 1.0]],
+            # CAM_BACK
+            [[-813.043166065008, -825.3453104780422, -14.480529239691625, -837.8834242142998],
+             [5.7940717606915175, -475.4852444033304, -812.914062090951, -710.9691029240383],
+             [-0.004668203505499156, -0.9999586913425677, -0.007798941241917679, -1.007525480580398],
+             [0.0, 0.0, 0.0, 1.0]],
+            # CAM_BACK_LEFT
+            [[-1149.5392303247443, 940.9229648721968, 8.063046726400245, -642.0285223586698],
+             [-442.2411716483507, -114.56587151389417, -1270.2458400363512, -520.4483240071451],
+             [-0.9481973029110318, -0.3163290533386733, -0.029288304254537875, -0.43581627449702864],
+             [0.0, 0.0, 0.0, 1.0]],
+            # CAM_BACK_RIGHT
+            [[304.42313405171575, -1463.425610380557, -61.18949508469049, -322.7224958717359],
+             [461.55255282524763, -127.43022641982672, -1268.1888147593554, -589.4029597434226],
+             [0.9340952306605895, -0.35649516421388244, -0.019424158907449675, -0.4928893159585641],
+             [0.0, 0.0, 0.0, 1.0]],
         ]
+        # fmt: on
 
-        lidar2img_list = []
-        for i in range(num_cams):
-            theta = np.radians(yaws[i])
-            c, s = np.cos(theta), np.sin(theta)
-            # Rotation from ego to camera frame
-            # ego: x=right, y=forward, z=up
-            # camera: x=right, y=down, z=forward
-            R = np.array([
-                [c, s, 0],
-                [0, 0, -1],
-                [-s, c, 0],
-            ])
-            t = -R @ np.array(positions[i])
-            extrinsic = np.eye(4)
-            extrinsic[:3, :3] = R
-            extrinsic[:3, 3] = t
-
-            lidar2img = intrinsic @ extrinsic
-            lidar2img_list.append(lidar2img)
-
-        lidar2img = np.stack(lidar2img_list)  # (num_cams, 4, 4)
-        return torch.tensor(lidar2img, dtype=torch.float32, device=device
-                            ).unsqueeze(0)  # (1, num_cams, 4, 4)
+        lidar2img = torch.tensor(lidar2img_list, dtype=torch.float32,
+                                 device=device)  # (6, 4, 4)
+        # Scale from original 1600x900 pixel space to model input 800x480
+        # so that point_sampling (which divides by img_w=800, img_h=480)
+        # produces correct [0,1] normalized coordinates.
+        lidar2img[:, 0, :] *= 800.0 / 1600.0   # x scale
+        lidar2img[:, 1, :] *= 480.0 / 900.0     # y scale
+        return lidar2img.unsqueeze(0)  # (1, num_cams, 4, 4)
 
     def forward(self, img_feats, bev_queries, bev_pos,
                 query_embed, reg_branches=None):
@@ -1082,14 +1104,15 @@ class PerceptionTransformer(nn.Module):
             self.num_cams, device)  # (1, num_cams, 4, 4)
         lidar2img = lidar2img.expand(B, -1, -1, -1)
 
-        reference_points_cam, _ = self.point_sampling(
+        reference_points_cam, bev_mask = self.point_sampling(
             ref_3d, lidar2img, self.img_h, self.img_w)
         # reference_points_cam: (num_cams, B, num_query, D, 2)
+        # bev_mask: (num_cams, B, num_query, D)
 
         # --- Encode: BEV queries attend to image features ---
         bev_embed = self.encoder(
             bev_queries, img_feats_flat,
-            bev_ref_points, reference_points_cam,
+            bev_ref_points, reference_points_cam, bev_mask,
             bev_spatial_shapes, spatial_shapes,
             bev_pos=bev_pos, num_cams=self.num_cams)
 
