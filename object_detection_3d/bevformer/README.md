@@ -29,10 +29,11 @@ The model uses Deformable Attention implemented with `F.grid_sample` (standard P
 
 ```bash
 $ pip install torch torchvision onnx onnxscript onnxruntime
+$ cd export
 $ python3 bevformer_onnx_export.py --verify
 ```
 
-This exports `bevformer_tiny.onnx` and verifies it with ONNX Runtime.
+This exports `bevformer_tiny.onnx` to the parent directory and verifies it with ONNX Runtime.
 
 ### Step 2: Run inference
 
@@ -86,11 +87,13 @@ CUDA custom operator in the original mmcv implementation. This project replaces
 it with a pure-PyTorch implementation using `F.grid_sample`, which is supported
 as a standard ONNX operator (opset >= 16).
 
-See `deformable_attention.py` for the implementation.
+See `export/deformable_attention.py` for the implementation.
 
 ### Export options
 
 ```bash
+$ cd export
+
 # Default: 480x800 input, 6 cameras, opset 18
 $ python3 bevformer_onnx_export.py
 
@@ -136,9 +139,9 @@ Parameters: ~34.8M
 | File | Description |
 |------|-------------|
 | `bevformer.py` | Main inference script (ONNX Runtime / ailia) |
-| `bevformer_model.py` | BEVFormer-tiny model definition (pure PyTorch) |
-| `bevformer_onnx_export.py` | ONNX export script with verification |
-| `deformable_attention.py` | Multi-Scale Deformable Attention (grid_sample-based) |
+| `export/bevformer_model.py` | BEVFormer-tiny model definition (pure PyTorch) |
+| `export/bevformer_onnx_export.py` | ONNX export script with verification |
+| `export/deformable_attention.py` | Multi-Scale Deformable Attention (grid_sample-based) |
 
 ## Reference
 

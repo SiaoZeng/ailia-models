@@ -155,7 +155,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Export BEVFormer-tiny to ONNX')
     parser.add_argument(
-        '--output', type=str, default='bevformer_tiny.onnx',
+        '--output', type=str, default='../bevformer_tiny.onnx',
         help='Output ONNX file path')
     parser.add_argument(
         '--opset', type=int, default=18,
