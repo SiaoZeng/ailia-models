@@ -33,7 +33,7 @@ $ cd export
 $ python3 bevformer_onnx_export.py --verify
 ```
 
-This exports `bevformer_tiny.onnx` to the parent directory and verifies it with ONNX Runtime.
+This downloads `bevformer_tiny_epoch_24.pth` pretrained weights, exports `bevformer_tiny.onnx` to the parent directory, and verifies it with ONNX Runtime.
 
 ### Step 2: Run inference
 
@@ -110,13 +110,13 @@ $ python3 bevformer_onnx_export.py --verify
 Model inputs:
   images: [1, 6, 3, 480, 800]
 Model outputs:
-  cls_scores: [1, 300, 10]
-  bbox_preds: [1, 300, 10]
+  cls_scores: [1, 900, 10]
+  bbox_preds: [1, 900, 10]
 
-cls_scores max diff:  0.000001
-bbox_preds max diff:  0.000000
+cls_scores max diff:  0.000017
+bbox_preds max diff:  0.000053
 PASSED (tolerance=0.001)
-Average inference time: ~568 ms (CPU)
+Average inference time: ~671 ms (CPU)
 ```
 
 ## Architecture
@@ -128,11 +128,11 @@ BEVFormer-tiny uses a spatiotemporal transformer architecture:
    - Self-attention on BEV queries (50x50 grid)
    - Deformable cross-attention to multi-scale image features (via `F.grid_sample`)
    - Feed-forward network
-3. **Detection Head**: Transformer decoder (6 layers) with 300 object queries
+3. **Detection Head**: Transformer decoder (6 layers) with 900 object queries
    - Classification head (10 nuScenes classes)
    - Regression head (cx, cy, cz, w, l, h, sin, cos, vx, vy)
 
-Parameters: ~34.8M
+Parameters: ~33.5M (pretrained on nuScenes)
 
 ## File Structure
 

@@ -50,14 +50,14 @@ NUM_CAMS = 6
 BEV_H = 50
 BEV_W = 50
 POINT_CLOUD_RANGE = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
-NUM_QUERIES = 300
+NUM_QUERIES = 900
 NUM_CLASSES = 10
 
 # ImageNet normalization (BEVFormer-tiny uses RGB with ImageNet mean/std)
 IMG_MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
 IMG_STD = np.array([58.395, 57.12, 57.375], dtype=np.float32)
 
-THRESHOLD = 0.3
+THRESHOLD = 0.05
 MAX_DETECTIONS = 20
 
 # nuScenes detection classes
@@ -190,8 +190,10 @@ def decode_bbox_3d(bbox_pred):
     """Decode 3D bounding box prediction.
 
     Args:
-        bbox_pred: (code_size,) raw prediction
+        bbox_pred: (code_size,) model output
             [cx, cy, cz, w, l, h, sin, cos, vx, vy]
+            cx, cy, cz are already in world coordinates (meters)
+            w, l, h are raw (log-space) values
 
     Returns:
         dict with 3D bbox parameters
@@ -204,11 +206,7 @@ def decode_bbox_3d(bbox_pred):
     # Convert sin/cos to yaw angle
     yaw = np.arctan2(sin_yaw, cos_yaw)
 
-    # Map normalized center to point cloud range
-    pc = POINT_CLOUD_RANGE
-    cx = cx * (pc[3] - pc[0]) + pc[0]
-    cy = cy * (pc[4] - pc[1]) + pc[1]
-    cz = cz * (pc[5] - pc[2]) + pc[2]
+    # cx, cy, cz are already in world coordinates from the model
 
     # Exponentiate dimensions
     w = np.exp(np.clip(w, -5, 5))
@@ -471,7 +469,7 @@ def draw_bev_detections(detections, imgs=None):
 
         ax_bev.text(
             center[0], center[1] + size[0] / 2 + 1.5,
-            f'{score:.2f}',
+            f'{cls_name} {score:.2f}',
             fontsize=6, color=color, ha='center')
 
     # Distance circles

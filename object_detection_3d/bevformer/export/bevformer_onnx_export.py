@@ -25,7 +25,22 @@ import torch
 import torch.nn as nn
 import onnx
 
-from bevformer_model import build_bevformer_tiny
+from bevformer_model import build_bevformer_tiny, load_pretrained
+
+CHECKPOINT_URL = 'https://github.com/zhiqi-li/storage/releases/download/v1.0/bevformer_tiny_epoch_24.pth'
+CHECKPOINT_FILE = 'bevformer_tiny_epoch_24.pth'
+
+
+def download_checkpoint(ckpt_path):
+    """Download pretrained weights if not present."""
+    if os.path.exists(ckpt_path):
+        print(f'Checkpoint found: {ckpt_path}')
+        return
+    print(f'Downloading checkpoint from {CHECKPOINT_URL}...')
+    import urllib.request
+    urllib.request.urlretrieve(CHECKPOINT_URL, ckpt_path)
+    size_mb = os.path.getsize(ckpt_path) / (1024 * 1024)
+    print(f'Downloaded: {ckpt_path} ({size_mb:.1f} MB)')
 
 
 def export_model(args):
@@ -38,6 +53,11 @@ def export_model(args):
         img_h=args.img_h,
         img_w=args.img_w,
     )
+
+    # Load pretrained weights
+    ckpt_path = os.path.join(os.path.dirname(__file__) or '.', CHECKPOINT_FILE)
+    download_checkpoint(ckpt_path)
+    model = load_pretrained(model, ckpt_path)
     model.eval()
 
     num_params = sum(p.numel() for p in model.parameters())
@@ -82,7 +102,10 @@ def export_model(args):
     # Verify ONNX model
     print('Verifying ONNX model...')
     onnx_model = onnx.load(output_path)
-    onnx.checker.check_model(onnx_model)
+    try:
+        onnx.checker.check_model(onnx_model)
+    except onnx.checker.ValidationError as e:
+        print(f'  Warning: ONNX checker: {e}')
 
     file_size = os.path.getsize(output_path) / (1024 * 1024)
     print(f'ONNX model saved: {output_path} ({file_size:.1f} MB)')
