@@ -34,7 +34,11 @@ WEIGHT_PATH = 'bevformer_tiny.onnx'
 MODEL_PATH = 'bevformer_tiny.onnx.prototxt'
 REMOTE_PATH = 'https://storage.googleapis.com/ailia-models/bevformer/'
 
-IMAGE_PATH = 'demo.jpg'
+CAMERA_NAMES = [
+    'CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT',
+    'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT',
+]
+IMAGE_PATH = [f'demo_{name}.jpg' for name in CAMERA_NAMES]
 SAVE_IMAGE_PATH = 'output.png'
 
 # Model input dimensions (must match the ONNX model)
@@ -84,7 +88,8 @@ CLASS_COLORS_RGB = [
 # ======================
 
 parser = get_base_parser(
-    'BEVFormer: Bird\'s-Eye-View 3D Object Detection', IMAGE_PATH, SAVE_IMAGE_PATH
+    'BEVFormer: Bird\'s-Eye-View 3D Object Detection',
+    IMAGE_PATH, SAVE_IMAGE_PATH
 )
 parser.add_argument(
     '-th', '--threshold',
@@ -131,22 +136,17 @@ def preprocess_image(img):
     return img_chw
 
 
-def prepare_multi_cam_input(img):
-    """Prepare 6-camera input from a single image.
-
-    In a real application, this would load 6 separate camera images.
-    For the demo, we replicate the front camera image to all 6 views.
+def prepare_multi_cam_input(imgs):
+    """Prepare 6-camera input from a list of images.
 
     Args:
-        img: BGR image (H, W, 3)
+        imgs: list of BGR images (H, W, 3), length 6
 
     Returns:
         images: (1, 6, 3, H, W) float32
     """
-    cam_img = preprocess_image(img)
-
-    # Replicate to 6 cameras
-    multi_cam = np.stack([cam_img] * NUM_CAMS, axis=0)
+    cam_imgs = [preprocess_image(img) for img in imgs]
+    multi_cam = np.stack(cam_imgs, axis=0)
 
     # Add batch dimension: (1, 6, 3, H, W)
     multi_cam = np.expand_dims(multi_cam, axis=0)
@@ -264,16 +264,40 @@ def get_3d_box_corners(center, size, yaw):
     return corners
 
 
-def draw_bev_detections(detections, img=None):
-    """Draw detection results in Bird's Eye View."""
+def draw_bev_detections(detections, imgs=None):
+    """Draw detection results in Bird's Eye View.
+
+    Args:
+        detections: list of detection dicts
+        imgs: list of 6 BGR camera images, or None
+    """
     pc = POINT_CLOUD_RANGE
 
-    if img is not None:
-        fig, (ax_img, ax_bev) = plt.subplots(1, 2, figsize=(20, 8))
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        ax_img.imshow(img_rgb)
-        ax_img.set_title('Camera Image')
-        ax_img.axis('off')
+    if imgs is not None:
+        # Layout: 3 rows of camera images on left, BEV on right
+        fig = plt.figure(figsize=(20, 10))
+        gs = fig.add_gridspec(3, 4, width_ratios=[1, 1, 1, 2])
+
+        # Camera layout:
+        # Row 0: FRONT_LEFT, FRONT, FRONT_RIGHT
+        # Row 1: (empty),    BEV,   (empty)
+        # Row 2: BACK_LEFT,  BACK,  BACK_RIGHT
+        cam_positions = [
+            (0, 1),  # CAM_FRONT
+            (0, 0),  # CAM_FRONT_LEFT
+            (0, 2),  # CAM_FRONT_RIGHT
+            (2, 1),  # CAM_BACK
+            (2, 0),  # CAM_BACK_LEFT
+            (2, 2),  # CAM_BACK_RIGHT
+        ]
+        for i, (row, col) in enumerate(cam_positions):
+            ax = fig.add_subplot(gs[row, col])
+            img_rgb = cv2.cvtColor(imgs[i], cv2.COLOR_BGR2RGB)
+            ax.imshow(img_rgb)
+            ax.set_title(CAMERA_NAMES[i], fontsize=8)
+            ax.axis('off')
+
+        ax_bev = fig.add_subplot(gs[:, 3])
     else:
         fig, ax_bev = plt.subplots(1, 1, figsize=(10, 10))
 
@@ -347,9 +371,9 @@ def draw_bev_detections(detections, img=None):
 # Main functions
 # ======================
 
-def predict_onnx(session, img):
+def predict_onnx(session, imgs):
     """Run inference with ONNX Runtime."""
-    images = prepare_multi_cam_input(img)
+    images = prepare_multi_cam_input(imgs)
     input_name = session.get_inputs()[0].name
     outputs = session.run(None, {input_name: images})
     cls_scores, bbox_preds = outputs[0], outputs[1]
@@ -357,72 +381,105 @@ def predict_onnx(session, img):
     return detections
 
 
-def predict_ailia(net, img):
+def predict_ailia(net, imgs):
     """Run inference with ailia SDK."""
-    images = prepare_multi_cam_input(img)
+    images = prepare_multi_cam_input(imgs)
     output = net.predict([images])
     cls_scores, bbox_preds = output[0], output[1]
     detections = post_process(cls_scores, bbox_preds, args.threshold)
     return detections
 
 
+def load_camera_images(input_paths):
+    """Load 6 camera images from input paths.
+
+    If 6 paths are given, load each as a separate camera view.
+    If 1 path is given, replicate to all 6 cameras.
+
+    Returns:
+        list of 6 BGR images
+    """
+    if len(input_paths) == NUM_CAMS:
+        imgs = []
+        for path in input_paths:
+            img = imread(path)
+            if img is None:
+                logger.error(f'Could not read image: {path}')
+                return None
+            imgs.append(img)
+        return imgs
+    elif len(input_paths) == 1:
+        img = imread(input_paths[0])
+        if img is None:
+            logger.error(f'Could not read image: {input_paths[0]}')
+            return None
+        logger.warning(
+            'Only 1 image provided, replicating to all 6 cameras. '
+            'For proper results, provide 6 surround-view camera images.')
+        return [img] * NUM_CAMS
+    else:
+        logger.error(
+            f'Expected 1 or {NUM_CAMS} input images, got {len(input_paths)}. '
+            f'Provide 6 images in order: {", ".join(CAMERA_NAMES)}')
+        return None
+
+
 def recognize_from_image(predictor, predict_fn):
     """Run inference on image(s)."""
-    for image_path in args.input:
-        logger.info(image_path)
+    imgs = load_camera_images(args.input)
+    if imgs is None:
+        return
 
-        img = imread(image_path)
-        if img is None:
-            logger.error(f'Could not read image: {image_path}')
-            continue
+    for i, path in enumerate(args.input[:NUM_CAMS]):
+        logger.info(f'{CAMERA_NAMES[i]}: {path}')
 
-        logger.info('Start inference...')
-        if args.benchmark:
-            logger.info('BENCHMARK mode')
-            total_time = 0
-            for i in range(args.benchmark_count):
-                start = int(round(time.time() * 1000))
-                detections = predict_fn(predictor, img)
-                end = int(round(time.time() * 1000))
-                estimation_time = (end - start)
-
-                logger.info(
-                    f'\tailia processing time {estimation_time} ms')
-                if i != 0:
-                    total_time += estimation_time
+    logger.info('Start inference...')
+    if args.benchmark:
+        logger.info('BENCHMARK mode')
+        total_time = 0
+        for i in range(args.benchmark_count):
+            start = int(round(time.time() * 1000))
+            detections = predict_fn(predictor, imgs)
+            end = int(round(time.time() * 1000))
+            estimation_time = (end - start)
 
             logger.info(
-                f'\taverage time '
-                f'{total_time / (args.benchmark_count - 1)} ms')
-        else:
-            detections = predict_fn(predictor, img)
+                f'\tailia processing time {estimation_time} ms')
+            if i != 0:
+                total_time += estimation_time
 
-        logger.info(f'Detected {len(detections)} objects')
-        for det in detections:
-            logger.info(
-                f'  {det["class_name"]}: score={det["score"]:.3f}, '
-                f'center=({det["bbox_3d"]["center"][0]:.1f}, '
-                f'{det["bbox_3d"]["center"][1]:.1f}, '
-                f'{det["bbox_3d"]["center"][2]:.1f})')
+        logger.info(
+            f'\taverage time '
+            f'{total_time / (args.benchmark_count - 1)} ms')
+    else:
+        detections = predict_fn(predictor, imgs)
 
-        fig = draw_bev_detections(detections, img)
+    logger.info(f'Detected {len(detections)} objects')
+    for det in detections:
+        logger.info(
+            f'  {det["class_name"]}: score={det["score"]:.3f}, '
+            f'center=({det["bbox_3d"]["center"][0]:.1f}, '
+            f'{det["bbox_3d"]["center"][1]:.1f}, '
+            f'{det["bbox_3d"]["center"][2]:.1f})')
 
-        save_path = get_savepath(args.savepath, image_path, ext='.png')
-        fig.savefig(save_path, dpi=100, bbox_inches='tight', pad_inches=0.1)
-        plt.close()
-        logger.info(f'saved at : {save_path}')
+    fig = draw_bev_detections(detections, imgs)
 
-        if args.write_json:
-            json_file = '%s.json' % save_path.rsplit('.', 1)[0]
-            with open(json_file, 'w') as f:
-                json.dump(detections, f, indent=2)
-            logger.info(f'JSON saved at : {json_file}')
+    save_path = get_savepath(args.savepath, args.input[0], ext='.png')
+    fig.savefig(save_path, dpi=100, bbox_inches='tight', pad_inches=0.1)
+    plt.close()
+    logger.info(f'saved at : {save_path}')
+
+    if args.write_json:
+        json_file = '%s.json' % save_path.rsplit('.', 1)[0]
+        with open(json_file, 'w') as f:
+            json.dump(detections, f, indent=2)
+        logger.info(f'JSON saved at : {json_file}')
 
     logger.info('Script finished successfully.')
 
 
 def recognize_from_video(predictor, predict_fn):
-    """Run inference on video."""
+    """Run inference on video (uses single camera replicated to 6 views)."""
     video_file = args.video if args.video else args.input[0]
     capture = webcamera_utils.get_capture(video_file)
     assert capture.isOpened(), 'Cannot capture source'
@@ -442,9 +499,10 @@ def recognize_from_video(predictor, predict_fn):
         if frame_shown and cv2.getWindowProperty('frame', cv2.WND_PROP_VISIBLE) == 0:
             break
 
-        detections = predict_fn(predictor, frame)
+        imgs = [frame] * NUM_CAMS
+        detections = predict_fn(predictor, imgs)
 
-        fig = draw_bev_detections(detections, frame)
+        fig = draw_bev_detections(detections, imgs)
         fig.canvas.draw()
         buf = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
         w, h = fig.canvas.get_width_height()

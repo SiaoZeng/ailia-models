@@ -2,12 +2,13 @@
 
 ## Input
 
-![Input](demo.jpg)
+![Input](demo_CAM_FRONT.jpg)
 
-(Synthetic driving scene image)
+(nuScenes surround-view camera image)
 
 - Input shape: (1, 6, 3, 480, 800) — 6 surround-view cameras, RGB
 - Range: normalized with ImageNet mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]
+- Cameras: CAM_FRONT, CAM_FRONT_LEFT, CAM_FRONT_RIGHT, CAM_BACK, CAM_BACK_LEFT, CAM_BACK_RIGHT
 
 BEVFormer takes multi-camera surround-view images (6 cameras: front, front-left, front-right, back, back-left, back-right) and generates a unified Bird's-Eye-View (BEV) representation for 3D object detection.
 
@@ -45,10 +46,19 @@ With ailia SDK:
 $ python3 bevformer.py
 ```
 
-If you want to specify the input image, put the image path after the `--input` option.
+To specify 6 surround-view camera images, provide them in order after the `--input` option:
+```bash
+$ python3 bevformer.py --onnx --input CAM_FRONT.jpg CAM_FRONT_LEFT.jpg CAM_FRONT_RIGHT.jpg CAM_BACK.jpg CAM_BACK_LEFT.jpg CAM_BACK_RIGHT.jpg
+```
+
+If only 1 image is provided, it will be replicated to all 6 camera views:
+```bash
+$ python3 bevformer.py --onnx --input IMAGE_PATH
+```
+
 You can use `--savepath` option to change the name of the output file to save.
 ```bash
-$ python3 bevformer.py --onnx --input IMAGE_PATH --savepath SAVE_IMAGE_PATH
+$ python3 bevformer.py --onnx --savepath SAVE_IMAGE_PATH
 ```
 
 By adding the `--video` option, you can input the video.
