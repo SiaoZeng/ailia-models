@@ -359,39 +359,35 @@ def draw_3d_bbox_on_camera(ax, corners_3d, cam_idx, color, score,
                            img_w, img_h):
     """Draw projected 3D bounding box on a camera image axis.
 
-    Uses nuScenes Box.render() convention:
-        - Front face (corners 0-3): drawn with class color
-        - Rear face (corners 4-7): drawn with darker shade
-        - Vertical edges (i to i+4): drawn with class color
+    Matches the official BEVFormer/nuScenes Box.render() convention:
+        - Same color for front face, rear face, and side edges
+        - corners 0-3: front face, corners 4-7: rear face
         - Front direction indicator line
+        - linewidth=2
     """
     pts_2d, valid = project_3d_to_camera(corners_3d, cam_idx, img_w, img_h)
 
-    # Darken color for rear face
-    rear_color = tuple(np.clip(np.array(color) * 0.5, 0, 1))
-
     def draw_rect(indices, c):
-        for i in range(len(indices)):
-            j = (i + 1) % len(indices)
-            a, b = indices[i], indices[j]
-            if valid[a] and valid[b]:
-                ax.plot([pts_2d[a, 0], pts_2d[b, 0]],
-                        [pts_2d[a, 1], pts_2d[b, 1]],
-                        color=c, linewidth=1.5, alpha=0.8)
+        prev = indices[-1]
+        for cur in indices:
+            if valid[prev] and valid[cur]:
+                ax.plot([pts_2d[prev, 0], pts_2d[cur, 0]],
+                        [pts_2d[prev, 1], pts_2d[cur, 1]],
+                        color=c, linewidth=2)
+            prev = cur
 
-    # Front face (corners 0-3), rear face (corners 4-7)
-    draw_rect([0, 1, 2, 3], color)
-    draw_rect([4, 5, 6, 7], rear_color)
-
-    # Vertical edges
+    # Side edges (vertical: i to i+4)
     for i in range(4):
         if valid[i] and valid[i + 4]:
             ax.plot([pts_2d[i, 0], pts_2d[i + 4, 0]],
                     [pts_2d[i, 1], pts_2d[i + 4, 1]],
-                    color=color, linewidth=1.5, alpha=0.8)
+                    color=color, linewidth=2)
 
-    # Front direction indicator: center-bottom to center-bottom-front
-    # (matching nuScenes: corners 2,3 = front-bottom, corners 6,7 = rear-bottom)
+    # Front face (corners 0-3), rear face (corners 4-7)
+    draw_rect([0, 1, 2, 3], color)
+    draw_rect([4, 5, 6, 7], color)
+
+    # Front direction indicator: center-bottom-forward to center-bottom
     front_bottom = [2, 3]
     all_bottom = [2, 3, 6, 7]
     if all(valid[k] for k in front_bottom) and all(valid[k] for k in all_bottom):
@@ -399,18 +395,7 @@ def draw_3d_bbox_on_camera(ax, corners_3d, cam_idx, color, score,
         center_bottom = np.mean(pts_2d[all_bottom], axis=0)
         ax.plot([center_bottom[0], center_bottom_forward[0]],
                 [center_bottom[1], center_bottom_forward[1]],
-                color=color, linewidth=2, alpha=0.8)
-
-    # Draw label at the top-front center if visible
-    top_front = [0, 1]  # front-top corners
-    visible_top = [k for k in top_front if valid[k]]
-    if visible_top:
-        label_x = np.mean([pts_2d[k, 0] for k in visible_top])
-        label_y = np.min([pts_2d[k, 1] for k in visible_top]) - 5
-        ax.text(label_x, label_y, f'{score:.2f}',
-                fontsize=5, color=color, ha='center',
-                bbox=dict(boxstyle='round,pad=0.1',
-                          facecolor='black', alpha=0.5))
+                color=color, linewidth=2)
 
 
 def draw_bev_detections(detections, imgs=None):
