@@ -6,7 +6,7 @@ with deformable attention + detection head) as a single ONNX model.
 Deformable Attention is implemented using F.grid_sample (standard ONNX op).
 
 Usage:
-    # Export with random weights (for architecture verification)
+    # Export with pretrained weights (auto-downloaded)
     python3 bevformer_onnx_export.py
 
     # Export with custom resolution

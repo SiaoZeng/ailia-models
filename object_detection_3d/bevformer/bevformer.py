@@ -319,29 +319,29 @@ def project_3d_to_camera(points_3d, cam_idx, img_w, img_h):
     return pts_2d, in_image
 
 
-# 3D box edge pairs (indices into 8 corners)
-BOX_EDGES = [
-    (0, 1), (1, 2), (2, 3), (3, 0),  # bottom face
-    (4, 5), (5, 6), (6, 7), (7, 4),  # top face
-    (0, 4), (1, 5), (2, 6), (3, 7),  # vertical edges
-]
-
-
 def get_3d_box_corners(center, size, yaw):
-    """Compute 8 corners of a 3D bounding box."""
+    """Compute 8 corners of a 3D bounding box.
+
+    Uses the same corner convention as nuScenes Box.corners():
+        Coordinate system: x=forward, y=left, z=up
+        Corners 0-3: front face, Corners 4-7: rear face
+        0: (+l/2, +w/2, +h/2)  front-left-top
+        1: (+l/2, -w/2, +h/2)  front-right-top
+        2: (+l/2, -w/2, -h/2)  front-right-bottom
+        3: (+l/2, +w/2, -h/2)  front-left-bottom
+        4: (-l/2, +w/2, +h/2)  rear-left-top
+        5: (-l/2, -w/2, +h/2)  rear-right-top
+        6: (-l/2, -w/2, -h/2)  rear-right-bottom
+        7: (-l/2, +w/2, -h/2)  rear-left-bottom
+    """
     w, l, h = size
     x, y, z = center
 
-    corners = np.array([
-        [-l / 2, -w / 2, -h / 2],
-        [l / 2, -w / 2, -h / 2],
-        [l / 2, w / 2, -h / 2],
-        [-l / 2, w / 2, -h / 2],
-        [-l / 2, -w / 2, h / 2],
-        [l / 2, -w / 2, h / 2],
-        [l / 2, w / 2, h / 2],
-        [-l / 2, w / 2, h / 2],
-    ])
+    # nuScenes convention: l along x (forward), w along y (left)
+    x_corners = l / 2 * np.array([1, 1, 1, 1, -1, -1, -1, -1])
+    y_corners = w / 2 * np.array([1, -1, -1, 1, 1, -1, -1, 1])
+    z_corners = h / 2 * np.array([1, 1, -1, -1, 1, 1, -1, -1])
+    corners = np.stack([x_corners, y_corners, z_corners], axis=-1)  # (8, 3)
 
     cos_yaw = np.cos(yaw)
     sin_yaw = np.sin(yaw)
@@ -357,19 +357,53 @@ def get_3d_box_corners(center, size, yaw):
 
 def draw_3d_bbox_on_camera(ax, corners_3d, cam_idx, color, score,
                            img_w, img_h):
-    """Draw projected 3D bounding box on a camera image axis."""
+    """Draw projected 3D bounding box on a camera image axis.
+
+    Uses nuScenes Box.render() convention:
+        - Front face (corners 0-3): drawn with class color
+        - Rear face (corners 4-7): drawn with darker shade
+        - Vertical edges (i to i+4): drawn with class color
+        - Front direction indicator line
+    """
     pts_2d, valid = project_3d_to_camera(corners_3d, cam_idx, img_w, img_h)
 
-    for i, j in BOX_EDGES:
-        if valid[i] and valid[j]:
-            ax.plot(
-                [pts_2d[i, 0], pts_2d[j, 0]],
-                [pts_2d[i, 1], pts_2d[j, 1]],
-                color=color, linewidth=1.5, alpha=0.8)
+    # Darken color for rear face
+    rear_color = tuple(np.clip(np.array(color) * 0.5, 0, 1))
+
+    def draw_rect(indices, c):
+        for i in range(len(indices)):
+            j = (i + 1) % len(indices)
+            a, b = indices[i], indices[j]
+            if valid[a] and valid[b]:
+                ax.plot([pts_2d[a, 0], pts_2d[b, 0]],
+                        [pts_2d[a, 1], pts_2d[b, 1]],
+                        color=c, linewidth=1.5, alpha=0.8)
+
+    # Front face (corners 0-3), rear face (corners 4-7)
+    draw_rect([0, 1, 2, 3], color)
+    draw_rect([4, 5, 6, 7], rear_color)
+
+    # Vertical edges
+    for i in range(4):
+        if valid[i] and valid[i + 4]:
+            ax.plot([pts_2d[i, 0], pts_2d[i + 4, 0]],
+                    [pts_2d[i, 1], pts_2d[i + 4, 1]],
+                    color=color, linewidth=1.5, alpha=0.8)
+
+    # Front direction indicator: center-bottom to center-bottom-front
+    # (matching nuScenes: corners 2,3 = front-bottom, corners 6,7 = rear-bottom)
+    front_bottom = [2, 3]
+    all_bottom = [2, 3, 6, 7]
+    if all(valid[k] for k in front_bottom) and all(valid[k] for k in all_bottom):
+        center_bottom_forward = np.mean(pts_2d[front_bottom], axis=0)
+        center_bottom = np.mean(pts_2d[all_bottom], axis=0)
+        ax.plot([center_bottom[0], center_bottom_forward[0]],
+                [center_bottom[1], center_bottom_forward[1]],
+                color=color, linewidth=2, alpha=0.8)
 
     # Draw label at the top-front center if visible
-    top_center_idx = [4, 5, 6, 7]  # top face corners
-    visible_top = [k for k in top_center_idx if valid[k]]
+    top_front = [0, 1]  # front-top corners
+    visible_top = [k for k in top_front if valid[k]]
     if visible_top:
         label_x = np.mean([pts_2d[k, 0] for k in visible_top])
         label_y = np.min([pts_2d[k, 1] for k in visible_top]) - 5
