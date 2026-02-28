@@ -58,6 +58,7 @@ IMG_MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
 IMG_STD = np.array([58.395, 57.12, 57.375], dtype=np.float32)
 
 THRESHOLD = 0.3
+MAX_DETECTIONS = 20
 
 # nuScenes detection classes
 NUSCENES_CLASSES = [
@@ -82,6 +83,33 @@ CLASS_COLORS_BGR = [
 CLASS_COLORS_RGB = [
     tuple(c[::-1]) for c in CLASS_COLORS_BGR
 ]
+
+# Approximate nuScenes camera parameters for 3D bbox projection
+# Ego frame: x=right, y=forward, z=up
+# Camera frame: x=right, y=down, z=forward
+CAMERA_INTRINSIC = np.array([
+    [1266.4, 0, 816.3],
+    [0, 1266.4, 491.5],
+    [0, 0, 1],
+], dtype=np.float64)
+
+# Camera yaw angles (degrees from forward/+y, CCW positive)
+CAMERA_YAWS_DEG = [0, 55, -55, 180, 110, -110]
+
+# Camera positions in ego frame [x_right, y_forward, z_up]
+CAMERA_POSITIONS = [
+    [0.0, 1.7, 1.5],    # CAM_FRONT
+    [0.5, 1.7, 1.5],    # CAM_FRONT_LEFT
+    [-0.5, 1.7, 1.5],   # CAM_FRONT_RIGHT
+    [0.0, 0.0, 1.5],    # CAM_BACK
+    [0.5, 1.0, 1.5],    # CAM_BACK_LEFT
+    [-0.5, 1.0, 1.5],   # CAM_BACK_RIGHT
+]
+
+# Original nuScenes image size (for projection)
+NUSCENES_IMG_W = 1600
+NUSCENES_IMG_H = 900
+
 
 # ======================
 # Argument Parser Config
@@ -233,7 +261,73 @@ def post_process(cls_scores, bbox_preds, threshold):
         })
 
     detections.sort(key=lambda x: x['score'], reverse=True)
+    detections = detections[:MAX_DETECTIONS]
     return detections
+
+
+def get_ego_to_cam_rotation(yaw_deg):
+    """Get rotation matrix from ego frame to camera frame.
+
+    Args:
+        yaw_deg: camera yaw in degrees (from +y/forward, CCW positive)
+
+    Returns:
+        3x3 rotation matrix
+    """
+    theta = np.radians(yaw_deg)
+    c, s = np.cos(theta), np.sin(theta)
+    # R = R_ego2cam_front @ R_z(-theta)
+    return np.array([
+        [c, s, 0],
+        [0, 0, -1],
+        [-s, c, 0],
+    ])
+
+
+def project_3d_to_camera(points_3d, cam_idx):
+    """Project 3D points (ego frame) to camera image coordinates.
+
+    Args:
+        points_3d: (N, 3) points in ego frame
+        cam_idx: camera index (0-5)
+
+    Returns:
+        pts_2d: (N, 2) image coordinates
+        valid: (N,) boolean mask for points in front of camera and in image
+    """
+    R = get_ego_to_cam_rotation(CAMERA_YAWS_DEG[cam_idx])
+    t = np.array(CAMERA_POSITIONS[cam_idx])
+
+    # Transform to camera frame
+    pts_cam = (R @ (points_3d - t).T).T  # (N, 3)
+
+    # Check if points are in front of camera
+    depth = pts_cam[:, 2]
+    in_front = depth > 0.1
+
+    # Project to image
+    pts_2d = np.zeros((len(points_3d), 2))
+    if np.any(in_front):
+        proj = CAMERA_INTRINSIC @ pts_cam[in_front].T  # (3, M)
+        pts_2d[in_front, 0] = proj[0] / proj[2]
+        pts_2d[in_front, 1] = proj[1] / proj[2]
+
+    # Check if projected points are within image bounds
+    in_image = (
+        in_front &
+        (pts_2d[:, 0] >= 0) & (pts_2d[:, 0] < NUSCENES_IMG_W) &
+        (pts_2d[:, 1] >= 0) & (pts_2d[:, 1] < NUSCENES_IMG_H)
+    )
+
+    return pts_2d, in_image
+
+
+# 3D box edge pairs (indices into 8 corners)
+BOX_EDGES = [
+    (0, 1), (1, 2), (2, 3), (3, 0),  # bottom face
+    (4, 5), (5, 6), (6, 7), (7, 4),  # top face
+    (0, 4), (1, 5), (2, 6), (3, 7),  # vertical edges
+]
 
 
 def get_3d_box_corners(center, size, yaw):
@@ -264,8 +358,31 @@ def get_3d_box_corners(center, size, yaw):
     return corners
 
 
+def draw_3d_bbox_on_camera(ax, corners_3d, cam_idx, color, score):
+    """Draw projected 3D bounding box on a camera image axis."""
+    pts_2d, valid = project_3d_to_camera(corners_3d, cam_idx)
+
+    for i, j in BOX_EDGES:
+        if valid[i] and valid[j]:
+            ax.plot(
+                [pts_2d[i, 0], pts_2d[j, 0]],
+                [pts_2d[i, 1], pts_2d[j, 1]],
+                color=color, linewidth=1.5, alpha=0.8)
+
+    # Draw label at the top-front center if visible
+    top_center_idx = [4, 5, 6, 7]  # top face corners
+    visible_top = [k for k in top_center_idx if valid[k]]
+    if visible_top:
+        label_x = np.mean([pts_2d[k, 0] for k in visible_top])
+        label_y = np.min([pts_2d[k, 1] for k in visible_top]) - 5
+        ax.text(label_x, label_y, f'{score:.2f}',
+                fontsize=5, color=color, ha='center',
+                bbox=dict(boxstyle='round,pad=0.1',
+                          facecolor='black', alpha=0.5))
+
+
 def draw_bev_detections(detections, imgs=None):
-    """Draw detection results in Bird's Eye View.
+    """Draw detection results in Bird's Eye View with camera projections.
 
     Args:
         detections: list of detection dicts
@@ -282,7 +399,7 @@ def draw_bev_detections(detections, imgs=None):
         # Row 0: FRONT_LEFT, FRONT, FRONT_RIGHT
         # Row 1: (empty),    BEV,   (empty)
         # Row 2: BACK_LEFT,  BACK,  BACK_RIGHT
-        cam_positions = [
+        cam_grid_positions = [
             (0, 1),  # CAM_FRONT
             (0, 0),  # CAM_FRONT_LEFT
             (0, 2),  # CAM_FRONT_RIGHT
@@ -290,12 +407,27 @@ def draw_bev_detections(detections, imgs=None):
             (2, 0),  # CAM_BACK_LEFT
             (2, 2),  # CAM_BACK_RIGHT
         ]
-        for i, (row, col) in enumerate(cam_positions):
+        cam_axes = []
+        for i, (row, col) in enumerate(cam_grid_positions):
             ax = fig.add_subplot(gs[row, col])
             img_rgb = cv2.cvtColor(imgs[i], cv2.COLOR_BGR2RGB)
             ax.imshow(img_rgb)
             ax.set_title(CAMERA_NAMES[i], fontsize=8)
+            ax.set_xlim([0, imgs[i].shape[1]])
+            ax.set_ylim([imgs[i].shape[0], 0])
             ax.axis('off')
+            cam_axes.append((i, ax))
+
+        # Draw 3D bboxes on camera images
+        for det in detections:
+            bbox = det['bbox_3d']
+            corners = get_3d_box_corners(
+                bbox['center'], bbox['size'], bbox['yaw'])
+            cls_id = det['class_id']
+            color = np.array(CLASS_COLORS_RGB[cls_id]) / 255.0
+            for cam_idx, ax in cam_axes:
+                draw_3d_bbox_on_camera(
+                    ax, corners, cam_idx, color, det['score'])
 
         ax_bev = fig.add_subplot(gs[:, 3])
     else:
@@ -338,9 +470,9 @@ def draw_bev_detections(detections, imgs=None):
             arrowprops=dict(arrowstyle='->', color=color, lw=1.5))
 
         ax_bev.text(
-            center[0], center[1] + size[0] / 2 + 1.0,
-            f'{cls_name} {score:.2f}',
-            fontsize=7, color=color, ha='center')
+            center[0], center[1] + size[0] / 2 + 1.5,
+            f'{score:.2f}',
+            fontsize=6, color=color, ha='center')
 
     # Distance circles
     for r in [10, 20, 30, 40, 50]:
