@@ -90,6 +90,16 @@ splits = {
     # fmt: on
 }
 
+version = ailia.get_version().split(".")
+AILIA_VERSION_MAJOR = int(version[0])
+AILIA_VERSION_MINOR = int(version[1])
+AILIA_VERSION_REVISION = int(version[2])
+COPY_BLOB_DATA = not (
+    AILIA_VERSION_MAJOR <= 1
+    and AILIA_VERSION_MINOR <= 2
+    and AILIA_VERSION_REVISION < 15
+)
+
 
 # ======================
 # Secondary Functions
@@ -276,7 +286,6 @@ class T2SModel:
                     },
                 )
             else:
-                COPY_INPUT_BLOB_DATA = False
                 if idx == 1:
                     y, k, v, y_emb, logits, samples = self.sess_sdec.run(
                         {
@@ -296,7 +305,7 @@ class T2SModel:
                     input_blob_idx = self.sess_sdec.get_input_blob_list()
                     output_blob_idx = self.sess_sdec.get_output_blob_list()
                     self.sess_sdec.set_input_blob_data(y, 0)
-                    if COPY_INPUT_BLOB_DATA:
+                    if COPY_BLOB_DATA:
                         kv_shape = (
                             kv_base_shape[0],
                             kv_base_shape[1] + idx - 2,
@@ -322,7 +331,7 @@ class T2SModel:
                     self.sess_sdec.set_input_blob_data(repetition_penalty, 8)
                     self.sess_sdec.update()
                     y = self.sess_sdec.get_blob_data(output_blob_idx[0])
-                    if not COPY_INPUT_BLOB_DATA:
+                    if not COPY_BLOB_DATA:
                         k = self.sess_sdec.get_blob_data(output_blob_idx[1])
                         v = self.sess_sdec.get_blob_data(output_blob_idx[2])
                     y_emb = self.sess_sdec.get_blob_data(output_blob_idx[3])
