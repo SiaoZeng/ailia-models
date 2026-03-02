@@ -59,8 +59,5 @@ ONNX opset = 17
 - [vq_model.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v3/vq_model.onnx.prototxt)
 - [vq_cfm.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v3/vq_cfm.onnx.prototxt)
 - [bigvgan_model.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v3/bigvgan_model.onnx.prototxt)
-
-#### Chinese BERT model
-
-- [chinese-roberta.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits/chinese-roberta.onnx.prototxt)
+- [chinese-roberta.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v3/chinese-roberta.onnx.prototxt)
 
