@@ -9,11 +9,7 @@ from g2pw.dataset import TextDataset, get_phoneme_labels
 from g2pw.utils import load_config
 
 REMOTE_BASE_URL = "https://storage.googleapis.com/ailia-models/g2pw/1.1/"
-BERT_BASE_CHINESE_URL = "https://huggingface.co/google-bert/bert-base-chinese/resolve/main/"
-TOKENIZER_FILES = [
-    "vocab.txt",
-    "tokenizer_config.json",
-]
+TOKENIZER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tokenizer")
 MODEL_FILES = [
     "g2pW.onnx",
     "config.py",
@@ -42,11 +38,6 @@ def download_model(model_dir):
         fpath = os.path.join(model_dir, fname)
         if not os.path.exists(fpath):
             _download_file(REMOTE_BASE_URL + fname, fpath)
-    # tokenizer files for ailia_tokenizer (bert-base-chinese)
-    for fname in TOKENIZER_FILES:
-        fpath = os.path.join(model_dir, fname)
-        if not os.path.exists(fpath):
-            _download_file(BERT_BASE_CHINESE_URL + fname, fpath)
 
 
 def predict(onnx_session, dataloader_or_generator, labels):
@@ -85,7 +76,7 @@ class G2PWConverter:
 
         self.batch_size = batch_size if batch_size else self.config.batch_size
         self.model_source = model_source if model_source else self.config.model_source
-        self.tokenizer = BertTokenizer.from_pretrained(model_dir)
+        self.tokenizer = BertTokenizer.from_pretrained(TOKENIZER_DIR)
 
         polyphonic_chars_path = os.path.join(model_dir, 'POLYPHONIC_CHARS.txt')
         monophonic_chars_path = os.path.join(model_dir, 'MONOPHONIC_CHARS.txt')
