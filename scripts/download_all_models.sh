@@ -261,6 +261,7 @@ cd ../../natural_language_processing/glucose; python3 glucose.py ${OPTION}
 cd ../../natural_language_processing/cross_encoder_mmarco; python3 cross_encoder_mmarco.py ${OPTION}
 cd ../../natural_language_processing/soundchoice-g2p; python3 soundchoice-g2p.py ${OPTION}
 cd ../../natural_language_processing/g2p_en; python3 g2p_en.py ${OPTION}
+cd ../../natural_language_processing/g2pw; python3 g2pw.py ${OPTION}
 cd ../../natural_language_processing/t5_base_japanese_ner; pyhton3 t5_base_japanese_ner.py ${OPTION}
 cd ../../natural_language_processing/japanese-reranker-cross-encoder; python3 japanese-reranker-cross-encoder.py ${OPTION}
 cd ../../natural_language_processing/bert_ner_japanese; python3 bert_ner_japanese.py ${OPTION}

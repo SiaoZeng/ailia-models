@@ -545,6 +545,7 @@ If you would like to try on your computer:
 |------------:|:------------:|:------------:|:------------:|:------------:|
 |[soundchoice-g2p](/natural_language_processing/soundchoice-g2p) | [Hugging Face - speechbrain/soundchoice-g2p](https://huggingface.co/speechbrain/soundchoice-g2p) | Pytorch | 1.2.16 and later | |
 |[g2p_en](/natural_language_processing/g2p_en) | [g2p_en](https://github.com/Kyubyong/g2p) | Pytorch | 1.2.14 and later | [JP](https://medium.com/axinc/g2p-en-%E8%8B%B1%E8%AA%9E%E3%81%AE%E3%83%86%E3%82%AD%E3%82%B9%E3%83%88%E3%82%92%E9%9F%B3%E7%B4%A0%E3%81%AB%E5%A4%89%E6%8F%9B%E3%81%99%E3%82%8B%E6%A9%9F%E6%A2%B0%E5%AD%A6%E7%BF%92%E3%83%A2%E3%83%87%E3%83%AB-88947c27b9ea) |
+|[g2pw](/natural_language_processing/g2pw) | [g2pW](https://github.com/GitYCC/g2pW) | Pytorch | 1.2.9 and later | |
 
 ### Named entity recognition
 
