@@ -33,6 +33,7 @@ WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec.onnx"
 WEIGHT_PATH_VQ = "vq_model.onnx"
 WEIGHT_PATH_CFM = "vq_cfm.onnx"
 WEIGHT_PATH_VGAN = "bigvgan_model.onnx"
+WEIGHT_PATH_BERT = "chinese-roberta.onnx"
 MODEL_PATH_SSL = WEIGHT_PATH_SSL + ".prototxt"
 MODEL_PATH_T2S_ENCODER = WEIGHT_PATH_T2S_ENCODER + ".prototxt"
 MODEL_PATH_T2S_FIRST_DECODER = WEIGHT_PATH_T2S_FIRST_DECODER + ".prototxt"
@@ -40,6 +41,7 @@ MODEL_PATH_T2S_STAGE_DECODER = WEIGHT_PATH_T2S_STAGE_DECODER + ".prototxt"
 MODEL_PATH_VQ = WEIGHT_PATH_VQ + ".prototxt"
 MODEL_PATH_CFM = WEIGHT_PATH_CFM + ".prototxt"
 MODEL_PATH_VGAN = WEIGHT_PATH_VGAN + ".prototxt"
+MODEL_PATH_BERT = WEIGHT_PATH_BERT + ".prototxt"
 
 REF_WAV_PATH = "reference_audio_captured_by_ax.wav"
 REF_TEXT = "水をマレーシアから買わなくてはならない。"
@@ -60,7 +62,7 @@ parser.add_argument(
     help="input text",
 )
 parser.add_argument(
-    "--text_language", "-tl", default="ja", choices=("ja", "en"), help="[ja, en]"
+    "--text_language", "-tl", default="ja", choices=("ja", "en", "zh"), help="[ja, en, zh]"
 )
 parser.add_argument(
     "--ref_audio",
@@ -77,7 +79,7 @@ parser.add_argument(
     help="ref text",
 )
 parser.add_argument(
-    "--ref_language", "-rl", default="ja", choices=("ja", "en"), help="[ja, en]"
+    "--ref_language", "-rl", default="ja", choices=("ja", "en", "zh"), help="[ja, en, zh]"
 )
 parser.add_argument("--top_k", type=int, default=15, help="top_k")
 parser.add_argument("--top_p", type=float, default=1.0, help="top_p")
@@ -623,7 +625,7 @@ class SSLModel:
         return last_hidden_state[0]
 
 
-def get_phones_and_bert(text, language, final=False):
+def get_phones_and_bert(text, language, bert_model=None, bert_tokenizer=None, final=False):
     if language == "en":
         try:
             import LangSegment
@@ -639,20 +641,32 @@ def get_phones_and_bert(text, language, final=False):
 
     phones, word2ph, norm_text = clean_text(formattext, language)
     phones = cleaned_text_to_sequence(phones)
-    bert = np.zeros((1024, len(phones)), dtype=np.float32)
+
+    if language == "zh" and word2ph is not None and bert_model is not None:
+        from text.bert_feature import get_bert_feature
+        bert = get_bert_feature(norm_text, word2ph, bert_tokenizer, bert_model, args.onnx).T
+        # .T: (num_phones, 1024) -> (1024, num_phones)
+    else:
+        bert = np.zeros((1024, len(phones)), dtype=np.float32)
 
     if not final and len(phones) < 6:
-        return get_phones_and_bert("." + text, language, final=True)
+        return get_phones_and_bert("." + text, language, bert_model, bert_tokenizer, final=True)
 
     return phones, bert, norm_text
 
 
-def generate_voice(ssl, models):
+def generate_voice(ssl, models, bert=None):
     gpt = T2SModel(
         models["t2s_encoder"], models["t2s_first_decoder"], models["t2s_stage_decoder"]
     )
     gpt_sovits = GptSoVits(gpt, models["vq"], models["vq_cfm"], models["vgan"])
     ssl = SSLModel(ssl)
+
+    use_zh = args.text_language == "zh" or args.ref_language == "zh"
+    bert_tokenizer = None
+    if use_zh:
+        from ailia_tokenizer import BertTokenizer
+        bert_tokenizer = BertTokenizer.from_pretrained("tokenizer/")
 
     input_audio = args.ref_audio
     ref_text = args.ref_text
@@ -696,7 +710,7 @@ def generate_voice(ssl, models):
     texts = process_text(texts)
     texts = merge_short_text_in_array(texts, 5)
 
-    ref_seq, ref_bert, _ = get_phones_and_bert(ref_text, ref_language)
+    ref_seq, ref_bert, _ = get_phones_and_bert(ref_text, ref_language, bert, bert_tokenizer)
     ref_seq = np.array(ref_seq)[np.newaxis, :]
 
     ref_audio = ref_audio[np.newaxis, :]
@@ -710,7 +724,7 @@ def generate_voice(ssl, models):
             text += "。" if text_language != "en" else "."
 
         logger.info("Actual Input Target Text (per sentence): %s" % text)
-        text_seq, text_bert, norm_text = get_phones_and_bert(text, text_language)
+        text_seq, text_bert, norm_text = get_phones_and_bert(text, text_language, bert, bert_tokenizer)
         text_seq = np.array(text_seq)[np.newaxis, :]
         logger.info("Processed text from the frontend (per sentence): %s" % norm_text)
 
@@ -743,6 +757,8 @@ def generate_voice(ssl, models):
 
 
 def main():
+    use_zh = args.text_language == "zh" or args.ref_language == "zh"
+
     # model files check and download
     check_and_download_models(WEIGHT_PATH_SSL, MODEL_PATH_SSL, REMOTE_PATH)
     check_and_download_models(
@@ -757,6 +773,9 @@ def main():
     check_and_download_models(WEIGHT_PATH_VQ, MODEL_PATH_VQ, REMOTE_PATH)
     check_and_download_models(WEIGHT_PATH_CFM, MODEL_PATH_CFM, REMOTE_PATH)
     check_and_download_models(WEIGHT_PATH_VGAN, MODEL_PATH_VGAN, REMOTE_PATH)
+    if use_zh:
+        BERT_REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v3/"
+        check_and_download_models(WEIGHT_PATH_BERT, MODEL_PATH_BERT, BERT_REMOTE_PATH)
 
     env_id = args.env_id
 
@@ -809,6 +828,12 @@ def main():
             memory_mode=memory_mode,
             env_id=env_id,
         )
+        bert_net = ailia.Net(
+            weight=WEIGHT_PATH_BERT,
+            stream=MODEL_PATH_BERT,
+            memory_mode=memory_mode,
+            env_id=env_id,
+        ) if use_zh else None
         if args.profile:
             ssl.set_profile_mode(True)
             t2s_encoder.set_profile_mode(True)
@@ -817,6 +842,8 @@ def main():
             vq.set_profile_mode(True)
             vq_cfm.set_profile_mode(True)
             vgan.set_profile_mode(True)
+            if bert_net is not None:
+                bert_net.set_profile_mode(True)
     else:
         import onnxruntime
 
@@ -827,6 +854,7 @@ def main():
         vq = onnxruntime.InferenceSession(WEIGHT_PATH_VQ)
         vq_cfm = onnxruntime.InferenceSession(WEIGHT_PATH_CFM)
         vgan = onnxruntime.InferenceSession(WEIGHT_PATH_VGAN)
+        bert_net = onnxruntime.InferenceSession(WEIGHT_PATH_BERT) if use_zh else None
 
     models = dict(
         ssl=ssl,
@@ -841,7 +869,7 @@ def main():
     if args.benchmark:
         start = int(round(time.time() * 1000))
 
-    generate_voice(ssl, models)
+    generate_voice(ssl, models, bert_net)
 
     if args.benchmark:
         end = int(round(time.time() * 1000))
@@ -862,6 +890,9 @@ def main():
         print(vq_cfm.get_summary())
         print("vgan : ")
         print(vgan.get_summary())
+        if bert_net is not None:
+            print("bert : ")
+            print(bert_net.get_summary())
 
 
 if __name__ == "__main__":
