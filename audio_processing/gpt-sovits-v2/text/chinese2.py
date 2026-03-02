@@ -5,9 +5,6 @@ import cn2an
 from pypinyin import lazy_pinyin, Style
 from pypinyin.contrib.tone_convert import to_normal, to_finals_tone3, to_initials, to_finals
 
-import logging
-logging.getLogger("jieba").setLevel(logging.WARNING)
-
 from text.symbols2 import punctuation
 from text.tone_sandhi import ToneSandhi
 from text.zh_normalization.text_normlization import TextNormalizer
@@ -21,6 +18,8 @@ pinyin_to_symbol_map = {
 }
 
 import jieba.posseg as psg
+import logging
+logging.getLogger("jieba").setLevel(logging.WARNING)
 
 # is_g2pw_str = os.environ.get("is_g2pw", "True")
 # is_g2pw = False#True if is_g2pw_str.lower() == 'true' else False

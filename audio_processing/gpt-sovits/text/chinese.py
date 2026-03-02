@@ -4,9 +4,6 @@ import re
 import cn2an
 from pypinyin import lazy_pinyin, Style
 
-import logging
-logging.getLogger("jieba").setLevel(logging.WARNING)
-
 from text.symbols import punctuation
 from text.tone_sandhi import ToneSandhi
 from text.zh_normalization.text_normlization import TextNormalizer
@@ -20,6 +17,8 @@ pinyin_to_symbol_map = {
 }
 
 import jieba.posseg as psg
+import logging
+logging.getLogger("jieba").setLevel(logging.WARNING)
 
 
 rep_map = {
