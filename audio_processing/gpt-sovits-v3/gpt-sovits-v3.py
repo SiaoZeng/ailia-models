@@ -7,7 +7,7 @@ from logging import getLogger
 import librosa
 import numpy as np
 import soundfile
-from tqdm import tqdm
+import platform
 
 # import original modules
 sys.path.append("../../util")
@@ -85,6 +85,10 @@ parser.add_argument("--top_k", type=int, default=15, help="top_k")
 parser.add_argument("--top_p", type=float, default=1.0, help="top_p")
 parser.add_argument("--temperature", type=float, default=1.0, help="temperature")
 parser.add_argument("--speed", type=float, default=1.0, help="Speech rate")
+parser.add_argument(
+    "--sample_steps", type=int, default=4,
+    help="Number of CFM sampling steps (original: 32, default: 4)"
+)
 parser.add_argument("--onnx", action="store_true", help="use onnx runtime")
 parser.add_argument("--profile", action="store_true", help="use profile model")
 args = update_parser(parser, check_input_type=False)
@@ -326,7 +330,7 @@ class T2SModel:
         logger.info(f"T2S Decoding...")
 
         stop = False
-        for idx in tqdm(range(1, 1500)):
+        for idx in range(1, 1500):
             if args.benchmark:
                 start = int(round(time.time() * 1000))
 
@@ -407,7 +411,7 @@ class T2SModel:
             if np.argmax(logits, axis=-1)[0] == EOS or samples[0, 0] == EOS:
                 stop = True
             if stop:
-                tqdm.write(f"T2S Decoding EOS [{prefix_len} -> {y.shape[1]}]")
+                logger.info(f"T2S Decoding EOS [{prefix_len} -> {y.shape[1]}]")
                 break
         y[0, -1] = 0
 
@@ -434,7 +438,10 @@ class GptSoVits:
         mu = mu.transpose(0, 2, 1)
         t = 0
         d = 1 / n_timesteps
-        for i in tqdm(range(n_timesteps)):
+        for i in range(n_timesteps):
+            if args.benchmark:
+                start = int(round(time.time() * 1000))
+
             t_tensor = np.ones(x.shape[0], dtype=mu.dtype) * t
             d_tensor = np.ones(x.shape[0], dtype=mu.dtype) * d
             if not args.onnx:
@@ -459,6 +466,11 @@ class GptSoVits:
                     },
                 )
                 v_pred = output[0]
+
+            if args.benchmark:
+                end = int(round(time.time() * 1000))
+                logger.info("\tcfm processing time {} ms".format(end - start))
+
             v_pred = v_pred.transpose(0, 2, 1)
             x = x + d * v_pred
             t = t + d
@@ -480,7 +492,7 @@ class GptSoVits:
         repetition_penalty=1.35,
         speed=1.0,
     ):
-        sample_steps = 32
+        sample_steps = args.sample_steps  # original: 32
 
         pred_semantic, prompt = self.t2s.forward(
             ref_seq,
