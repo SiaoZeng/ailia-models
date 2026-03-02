@@ -774,7 +774,7 @@ def main():
     check_and_download_models(WEIGHT_PATH_CFM, MODEL_PATH_CFM, REMOTE_PATH)
     check_and_download_models(WEIGHT_PATH_VGAN, MODEL_PATH_VGAN, REMOTE_PATH)
     if use_zh:
-        BERT_REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits/"
+        BERT_REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v3/"
         check_and_download_models(WEIGHT_PATH_BERT, MODEL_PATH_BERT, BERT_REMOTE_PATH)
 
     env_id = args.env_id
