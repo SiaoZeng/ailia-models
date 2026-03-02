@@ -856,6 +856,12 @@ def main():
             vgan.set_profile_mode(True)
             if bert_net is not None:
                 bert_net.set_profile_mode(True)
+        pf = platform.system()
+        if pf == "Darwin":
+            if args.env_id == 2:
+                logger.info(
+                    "This model not optimized for macOS GPU currently. Please try -e 1 option to improve inference speed."
+                )
     else:
         import onnxruntime
 
