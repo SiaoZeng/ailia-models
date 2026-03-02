@@ -17,6 +17,8 @@ pinyin_to_symbol_map = {
 }
 
 import jieba.posseg as psg
+import logging
+logging.getLogger("jieba").setLevel(logging.WARNING)
 
 
 rep_map = {
