@@ -53,5 +53,9 @@ $ python3 g2pw.py --style bopomofo
 ## Model Format
 ONNX opset=12
 
+## Netron
+
+- [g2pW.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/g2pw/1.1/g2pW.onnx.prototxt)
+
 ## Python version
 Python 3.6.13 
