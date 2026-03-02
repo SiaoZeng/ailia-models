@@ -7,7 +7,6 @@ from logging import getLogger  # noqa: E402
 import numpy as np
 import soundfile
 import librosa
-from tqdm import tqdm
 
 # import original modules
 sys.path.append("../../util")
@@ -258,7 +257,7 @@ class T2SModel:
             logger.info("\tfsdec processing time {} ms".format(end - start))
 
         stop = False
-        for idx in tqdm(range(1, 1500)):
+        for idx in range(1, 1500):
             if args.benchmark:
                 start = int(round(time.time() * 1000))
             if args.onnx:
