@@ -8,4 +8,3 @@ wordsegment
 jieba
 pypinyin
 cn2an
-opencc-python-reimplemented

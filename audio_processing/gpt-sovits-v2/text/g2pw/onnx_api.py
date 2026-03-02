@@ -14,7 +14,6 @@ from typing import Tuple
 import numpy as np
 import onnxruntime
 onnxruntime.set_default_logger_severity(3)
-from opencc import OpenCC
 from ailia_tokenizer import BertTokenizer
 from pypinyin import pinyin
 from pypinyin import Style
@@ -174,6 +173,7 @@ class G2PWOnnxConverter:
             self.char_bopomofo_dict = json.load(fr)
 
         if self.enable_opencc:
+            from opencc import OpenCC
             self.cc = OpenCC('s2tw')
 
     def _convert_bopomofo_to_pinyin(self, bopomofo: str) -> str:
