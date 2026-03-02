@@ -1,11 +1,52 @@
 import os
 import json
 
-from transformers import BertTokenizer
+import requests
+from ailia_tokenizer import BertTokenizer
 import numpy as np
 
 from g2pw.dataset import TextDataset, get_phoneme_labels
 from g2pw.utils import load_config
+
+REMOTE_BASE_URL = "https://storage.googleapis.com/ailia-models/g2pw/1.1/"
+BERT_BASE_CHINESE_URL = "https://huggingface.co/google-bert/bert-base-chinese/resolve/main/"
+TOKENIZER_FILES = [
+    "vocab.txt",
+    "tokenizer_config.json",
+]
+MODEL_FILES = [
+    "g2pW.onnx",
+    "config.py",
+    "POLYPHONIC_CHARS.txt",
+    "MONOPHONIC_CHARS.txt",
+    "version",
+    "bopomofo_to_pinyin_wo_tune_dict.json",
+    "char_bopomofo_dict.json",
+]
+
+
+def _download_file(url, fpath):
+    print(f"Downloading {os.path.basename(fpath)}...")
+    with requests.get(url, stream=True, allow_redirects=True) as r:
+        r.raise_for_status()
+        with open(fpath, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+
+def download_model(model_dir):
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir, exist_ok=True)
+    for fname in MODEL_FILES:
+        fpath = os.path.join(model_dir, fname)
+        if not os.path.exists(fpath):
+            _download_file(REMOTE_BASE_URL + fname, fpath)
+    # tokenizer files for ailia_tokenizer (bert-base-chinese)
+    for fname in TOKENIZER_FILES:
+        fpath = os.path.join(model_dir, fname)
+        if not os.path.exists(fpath):
+            _download_file(BERT_BASE_CHINESE_URL + fname, fpath)
 
 
 def predict(onnx_session, dataloader_or_generator, labels):
@@ -34,17 +75,7 @@ def predict(onnx_session, dataloader_or_generator, labels):
 class G2PWConverter:
     def __init__(self, model_dir='G2PWModel/', style='bopomofo', model_source=None, batch_size=None,
                  enable_non_tradional_chinese=False, onnx_session=None):
-        required_files = (
-            'config.py',
-            'POLYPHONIC_CHARS.txt',
-            'MONOPHONIC_CHARS.txt',
-            'version',
-        )
-        missing_files = [f for f in required_files if not os.path.exists(os.path.join(model_dir, f))]
-        if missing_files:
-            raise FileNotFoundError(
-                f"Offline mode: required model files are missing in '{model_dir}': {', '.join(missing_files)}"
-            )
+        download_model(model_dir)
 
         if onnx_session is None:
             raise ValueError("onnx_session is required. This implementation does not use onnxruntime.")
@@ -54,7 +85,7 @@ class G2PWConverter:
 
         self.batch_size = batch_size if batch_size else self.config.batch_size
         self.model_source = model_source if model_source else self.config.model_source
-        self.tokenizer = BertTokenizer.from_pretrained(self.model_source)
+        self.tokenizer = BertTokenizer.from_pretrained(model_dir)
 
         polyphonic_chars_path = os.path.join(model_dir, 'POLYPHONIC_CHARS.txt')
         monophonic_chars_path = os.path.join(model_dir, 'MONOPHONIC_CHARS.txt')

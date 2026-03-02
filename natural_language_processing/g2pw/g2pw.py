@@ -1,7 +1,7 @@
 import sys
 import os
 
-from g2pw.api import G2PWConverter
+from g2pw.api import G2PWConverter, download_model
 
 sys.path.append("../../util")
 from arg_utils import get_base_parser, update_parser  # noqa: E402
@@ -9,7 +9,7 @@ from arg_utils import get_base_parser, update_parser  # noqa: E402
 from logging import getLogger  # noqa: E402
 logger = getLogger(__name__)
 
-WEIGHT_PATH = "G2PWModel/g2pw.onnx"
+WEIGHT_PATH = "G2PWModel/g2pW.onnx"
 
 parser = get_base_parser(
     "G2PW",
@@ -44,6 +44,7 @@ class AiliaG2P(G2PWConverter):
         import ailia
 
         model_dir = os.path.dirname(weight_path) or '.'
+        download_model(model_dir)
         self.net = ailia.Net(None, weight_path, env_id=env_id)
 
         class AiliaSession:
@@ -67,6 +68,7 @@ def main():
         import onnxruntime
 
         model_dir = os.path.dirname(WEIGHT_PATH) or '.'
+        download_model(model_dir)
         session = onnxruntime.InferenceSession(WEIGHT_PATH)
         converter = G2PWConverter(
             model_dir=model_dir,
