@@ -87,6 +87,6 @@ ONNX opset = 17
 - [cnhubert.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro/cnhubert.onnx.prototxt)
 - [t2s_encoder.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro/t2s_encoder.onnx.prototxt)
 - [t2s_fsdec.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro/t2s_fsdec.onnx.prototxt)
-- [t2s_sdec.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro/t2s_sdec.onnx.prototxt)
+- [t2s_sdec.opt.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro/t2s_sdec.opt.onnx.prototxt)
 - [sv.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro/sv.onnx.prototxt)
 - [vits.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro/vits.onnx.prototxt)
