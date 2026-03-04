@@ -144,6 +144,7 @@ If you would like to try on your computer:
 | [gpt-sovits](/audio_processing/gpt-sovits/) | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) | Pytorch | 1.4.0 and later | Feb 2024 | [JP](https://medium.com/axinc/gpt-sovits-%E3%83%95%E3%82%A1%E3%82%A4%E3%83%B3%E3%83%81%E3%83%A5%E3%83%BC%E3%83%8B%E3%83%B3%E3%82%B0%E3%81%A7%E3%81%8D%E3%82%8B0%E3%82%B7%E3%83%A7%E3%83%83%E3%83%88%E3%81%AE%E9%9F%B3%E5%A3%B0%E5%90%88%E6%88%90%E3%83%A2%E3%83%87%E3%83%AB-2212eeb5ad20) |
 | [gpt-sovits-v2](/audio_processing/gpt-sovits-v2/) | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) | Pytorch | 1.4.0 and later | Aug 2024 |  |
 | [gpt-sovits-v3](/audio_processing/gpt-sovits-v3/) | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) | Pytorch | 1.4.0 and later | Feb 2025 |  |
+| [gpt-sovits-v2-pro](/audio_processing/gpt-sovits-v2-pro/) | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) | Pytorch | 1.4.0 and later | Mar 2025 |  |
 | [cosyvoice2](/audio_processing/cosyvoice2/) | [CosyVoice2](https://github.com/FunAudioLLM/CosyVoice/tree/main) | Pytorch | 1.4.0 and later | Dec 2024 |  |
 
 ### Voice activity detection
@@ -545,6 +546,7 @@ If you would like to try on your computer:
 |------------:|:------------:|:------------:|:------------:|:------------:|
 |[soundchoice-g2p](/natural_language_processing/soundchoice-g2p) | [Hugging Face - speechbrain/soundchoice-g2p](https://huggingface.co/speechbrain/soundchoice-g2p) | Pytorch | 1.2.16 and later | |
 |[g2p_en](/natural_language_processing/g2p_en) | [g2p_en](https://github.com/Kyubyong/g2p) | Pytorch | 1.2.14 and later | [JP](https://medium.com/axinc/g2p-en-%E8%8B%B1%E8%AA%9E%E3%81%AE%E3%83%86%E3%82%AD%E3%82%B9%E3%83%88%E3%82%92%E9%9F%B3%E7%B4%A0%E3%81%AB%E5%A4%89%E6%8F%9B%E3%81%99%E3%82%8B%E6%A9%9F%E6%A2%B0%E5%AD%A6%E7%BF%92%E3%83%A2%E3%83%87%E3%83%AB-88947c27b9ea) |
+|[g2pw](/natural_language_processing/g2pw) | [g2pW](https://github.com/GitYCC/g2pW) | Pytorch | 1.2.9 and later | |
 
 ### Named entity recognition
 

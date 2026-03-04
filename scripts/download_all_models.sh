@@ -41,6 +41,7 @@ cd ../../audio_processing/reazon_speech2/; python3 reazon_speech2.py ${OPTION}
 cd ../../audio_processing/gpt-sovits/; python3 gpt-sovits.py ${OPTION}
 cd ../../audio_processing/gpt-sovits-v2/; python3 gpt-sovits-v2.py ${OPTION}
 cd ../../audio_processing/gpt-sovits-v3/; python3 gpt-sovits-v3.py ${OPTION}
+cd ../../audio_processing/gpt-sovits-v2-pro/; python3 gpt-sovits-v2-pro.py ${OPTION}
 cd ../../audio_processing/bert-vits2/; python3 bert-vits2.py ${OPTION}
 cd ../../audio_processing/dtln/; python3 dtln.py ${OPTION}
 cd ../../audio_processing/pytorch_wavenet/; python3 pytorch_wavenet.py ${OPTION}
@@ -261,6 +262,7 @@ cd ../../natural_language_processing/glucose; python3 glucose.py ${OPTION}
 cd ../../natural_language_processing/cross_encoder_mmarco; python3 cross_encoder_mmarco.py ${OPTION}
 cd ../../natural_language_processing/soundchoice-g2p; python3 soundchoice-g2p.py ${OPTION}
 cd ../../natural_language_processing/g2p_en; python3 g2p_en.py ${OPTION}
+cd ../../natural_language_processing/g2pw; python3 g2pw.py ${OPTION}
 cd ../../natural_language_processing/t5_base_japanese_ner; pyhton3 t5_base_japanese_ner.py ${OPTION}
 cd ../../natural_language_processing/japanese-reranker-cross-encoder; python3 japanese-reranker-cross-encoder.py ${OPTION}
 cd ../../natural_language_processing/bert_ner_japanese; python3 bert_ner_japanese.py ${OPTION}
