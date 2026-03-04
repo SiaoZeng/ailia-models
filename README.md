@@ -161,9 +161,10 @@ If you would like to try on your computer:
 
 ## Autonomous driving
 
-| | Model | Reference | Exported From | Supported Ailia Version | Blog |
-|:-----------|------------:|:------------:|:------------:|:------------:|:------------:|
-| [<img src="autonomous_driving/bevformer/output.png" width=128px>](autonomous_driving/bevformer/) |[bevformer](/autonomous_driving/bevformer/) | [BEVFormer](https://github.com/fundamentalvision/BEVFormer) | Pytorch | 1.6.1 and later | |
+| Model | Reference | Exported From | Supported Ailia Version | Blog |
+|------------:|:------------:|:------------:|:------------:|:------------:|
+|[bevformer](/autonomous_driving/bevformer/) | [BEVFormer](https://github.com/fundamentalvision/BEVFormer) | Pytorch | 1.6.1 and later | |
+|[uniad](/autonomous_driving/uniad/) | [UniAD: Unified Driving](https://github.com/OpenDriveLab/UniAD) | Pytorch | 1.6.1 and later | |
 
 ## Background removal
 
