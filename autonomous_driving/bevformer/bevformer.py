@@ -129,7 +129,7 @@ LIDAR2IMG = np.array([
 
 parser = get_base_parser(
     'BEVFormer: Bird\'s-Eye-View 3D Object Detection',
-    IMAGE_PATH, SAVE_IMAGE_PATH
+    IMAGE_PATH, SAVE_IMAGE_PATH, fp16_support = False
 )
 parser.add_argument(
     '-th', '--threshold',

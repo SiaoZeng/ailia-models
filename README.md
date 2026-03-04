@@ -163,7 +163,7 @@ If you would like to try on your computer:
 
 | | Model | Reference | Exported From | Supported Ailia Version | Blog |
 |:-----------|------------:|:------------:|:------------:|:------------:|:------------:|
-| [<img src="autonomous_driving/bevformer/output.png" width=128px>](autonomous_driving/bevformer/) |[bevformer](/autonomous_driving/bevformer/) | [BEVFormer](https://github.com/fundamentalvision/BEVFormer) | Pytorch | 1.2.9 and later | |
+| [<img src="autonomous_driving/bevformer/output.png" width=128px>](autonomous_driving/bevformer/) |[bevformer](/autonomous_driving/bevformer/) | [BEVFormer](https://github.com/fundamentalvision/BEVFormer) | Pytorch | 1.6.1 and later | |
 
 ## Background removal
 
