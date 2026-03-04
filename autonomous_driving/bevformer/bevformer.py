@@ -30,9 +30,9 @@ logger = getLogger(__name__)
 # Parameters
 # ======================
 
-WEIGHT_PATH = 'bevformer_tiny_v2.onnx'
-MODEL_PATH = 'bevformer_tiny_v2.onnx.prototxt'
-REMOTE_PATH = 'https://storage.googleapis.com/ailia-uploader/bevformer/'
+WEIGHT_PATH = 'bevformer_tiny.onnx'
+MODEL_PATH = 'bevformer_tiny.onnx.prototxt'
+REMOTE_PATH = 'https://storage.googleapis.com/ailia-models/bevformer/'
 
 CAMERA_NAMES = [
     'CAM_FRONT', 'CAM_FRONT_LEFT', 'CAM_FRONT_RIGHT',

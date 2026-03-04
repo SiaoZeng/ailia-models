@@ -159,6 +159,12 @@ If you would like to try on your computer:
 |------------:|:------------:|:------------:|:------------:|:------------:|
 | [rvc](/audio_processing/rvc/) | [Retrieval-based-Voice-Conversion-WebUI](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI) | Pytorch | 1.2.12 and later | [JP](https://medium.com/axinc/rvc-ai%E3%82%92%E4%BD%BF%E7%94%A8%E3%81%97%E3%81%9F%E3%83%9C%E3%82%A4%E3%82%B9%E3%83%81%E3%82%A7%E3%83%B3%E3%82%B8%E3%83%A3%E3%83%BC-64a813c7a0c4) |
 
+## Autonomous driving
+
+| | Model | Reference | Exported From | Supported Ailia Version | Blog |
+|:-----------|------------:|:------------:|:------------:|:------------:|:------------:|
+| [<img src="autonomous_driving/bevformer/output.png" width=128px>](autonomous_driving/bevformer/) |[bevformer](/autonomous_driving/bevformer/) | [BEVFormer](https://github.com/fundamentalvision/BEVFormer) | Pytorch | 1.2.9 and later | |
+
 ## Background removal
 
 | | Model | Reference | Exported From | Supported Ailia Version | Blog |
@@ -691,7 +697,6 @@ If you would like to try on your computer:
 | [<img src="object_detection_3d/egonet/output.png" width=128px>](object_detection_3d/egonet/) |[egonet](/object_detection_3d/egonet/) | [EgoNet](https://github.com/Nicholasli1995/EgoNet) | Pytorch | 1.2.9 and later | |
 | [<img src="object_detection_3d/d4lcn/output.png" width=128px>](object_detection_3d/d4lcn/) |[d4lcn](/object_detection_3d/d4lcn/) | [D4LCN](https://github.com/dingmyu/D4LCN) | Pytorch | 1.2.9 and later | |
 | [<img src="object_detection_3d/did_m3d/output.png" width=128px>](object_detection_3d/did_m3d/) |[did_m3d](/object_detection_3d/did_m3d/) | [DID M3D](https://github.com/SPengLiang/DID-M3D) | Pytorch | 1.2.11 and later | |
-| [<img src="object_detection_3d/bevformer/output.png" width=128px>](object_detection_3d/bevformer/) |[bevformer](/object_detection_3d/bevformer/) | [BEVFormer](https://github.com/fundamentalvision/BEVFormer) | Pytorch | 1.2.9 and later | |
 
 ## Object tracking
 
