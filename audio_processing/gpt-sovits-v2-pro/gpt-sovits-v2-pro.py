@@ -1,3 +1,4 @@
+import os
 import time
 import sys
 import platform
@@ -15,6 +16,7 @@ from arg_utils import get_base_parser, update_parser  # noqa: E402
 from model_utils import check_and_download_models  # noqa: E402
 
 import ailia
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "gpt-sovits-v2"))
 from text import cleaned_text_to_sequence
 from text.cleaner import clean_text
 
