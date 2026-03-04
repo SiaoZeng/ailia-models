@@ -34,12 +34,14 @@ WEIGHT_PATH_T2S_ENCODER = "t2s_encoder.onnx"
 WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec.onnx"
 WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec.onnx"
 WEIGHT_PATH_VITS = "vits.onnx"
+WEIGHT_PATH_SV = "sv.onnx"
 WEIGHT_PATH_BERT = "chinese-roberta.onnx"
 MODEL_PATH_SSL = WEIGHT_PATH_SSL + ".prototxt"
 MODEL_PATH_T2S_ENCODER = WEIGHT_PATH_T2S_ENCODER + ".prototxt"
 MODEL_PATH_T2S_FIRST_DECODER = WEIGHT_PATH_T2S_FIRST_DECODER + ".prototxt"
 MODEL_PATH_T2S_STAGE_DECODER = WEIGHT_PATH_T2S_STAGE_DECODER + ".prototxt"
 MODEL_PATH_VITS = WEIGHT_PATH_VITS + ".prototxt"
+MODEL_PATH_SV = WEIGHT_PATH_SV + ".prototxt"
 MODEL_PATH_BERT = WEIGHT_PATH_BERT + ".prototxt"
 
 
@@ -366,6 +368,7 @@ class GptSoVits:
         text_bert,
         ref_audio,
         ssl_content,
+        sv_emb,
         top_k=20,
         top_p=0.6,
         temperature=0.6,
@@ -383,7 +386,6 @@ class GptSoVits:
             temperature=temperature,
             repetition_penalty=repetition_penalty,
         )
-        speed = np.array(speed, dtype=np.float32)
         if args.benchmark:
             start = int(round(time.time() * 1000))
         if args.onnx:
@@ -393,7 +395,7 @@ class GptSoVits:
                     "text_seq": text_seq,
                     "pred_semantic": pred_semantic,
                     "ref_audio": ref_audio,
-                    "speed": speed,
+                    "sv_emb": sv_emb,
                 },
             )
         else:
@@ -402,7 +404,7 @@ class GptSoVits:
                     "text_seq": text_seq,
                     "pred_semantic": pred_semantic,
                     "ref_audio": ref_audio,
-                    "speed": speed,
+                    "sv_emb": sv_emb,
                 }
             )
         if args.benchmark:
@@ -426,6 +428,127 @@ class SSLModel:
             end = int(round(time.time() * 1000))
             logger.info("\tssl processing time {} ms".format(end - start))
         return last_hidden_state[0]
+
+
+def compute_kaldi_fbank(waveform, sample_rate=16000, num_mel_bins=80):
+    """Compute Kaldi-compatible fbank features using numpy.
+
+    Args:
+        waveform: numpy array of shape (num_samples,), float32, range [-1, 1]
+        sample_rate: sample rate in Hz
+        num_mel_bins: number of mel filterbank bins
+
+    Returns:
+        fbank_feat: numpy array of shape (num_frames, num_mel_bins)
+    """
+    frame_length_ms = 25.0
+    frame_shift_ms = 10.0
+    preemph_coeff = 0.97
+    low_freq = 20.0
+    high_freq = sample_rate / 2.0
+
+    frame_length = int(sample_rate * frame_length_ms / 1000)
+    frame_shift = int(sample_rate * frame_shift_ms / 1000)
+
+    # next power of 2
+    n_fft = 1
+    while n_fft < frame_length:
+        n_fft *= 2
+
+    # Frame the signal
+    num_samples = len(waveform)
+    num_frames = 1 + (num_samples - frame_length) // frame_shift
+    if num_frames < 1:
+        return np.zeros((0, num_mel_bins), dtype=np.float32)
+
+    indices = np.arange(frame_length)[None, :] + np.arange(num_frames)[:, None] * frame_shift
+    frames = waveform[indices]
+
+    # Remove DC offset
+    frames = frames - np.mean(frames, axis=1, keepdims=True)
+
+    # Compute raw energy (before preemphasis)
+    raw_energy = np.sum(frames ** 2, axis=1)
+    raw_energy = np.maximum(raw_energy, np.finfo(np.float32).eps)
+    log_energy = np.log(raw_energy)
+
+    # Preemphasis
+    preemph_frames = np.copy(frames)
+    preemph_frames[:, 1:] = frames[:, 1:] - preemph_coeff * frames[:, :-1]
+    frames = preemph_frames
+
+    # Povey window (hann^0.85)
+    window = np.hanning(frame_length).astype(np.float32) ** 0.85
+    frames = frames * window[None, :]
+
+    # Zero-pad to n_fft
+    if n_fft > frame_length:
+        frames = np.pad(frames, ((0, 0), (0, n_fft - frame_length)))
+
+    # FFT
+    spectrum = np.abs(np.fft.rfft(frames, n=n_fft))
+    power_spectrum = spectrum ** 2
+
+    # Mel filterbank
+    num_fft_bins = n_fft // 2
+    mel_low = 1127.0 * np.log(1.0 + low_freq / 700.0)
+    mel_high = 1127.0 * np.log(1.0 + high_freq / 700.0)
+    mel_delta = (mel_high - mel_low) / (num_mel_bins + 1)
+
+    bins = np.arange(num_mel_bins)
+    left_mel = mel_low + bins * mel_delta
+    center_mel = mel_low + (bins + 1) * mel_delta
+    right_mel = mel_low + (bins + 2) * mel_delta
+
+    fft_bin_width = sample_rate / n_fft
+    mel_freqs = 1127.0 * np.log(1.0 + fft_bin_width * np.arange(num_fft_bins) / 700.0)
+
+    # (num_mel_bins, num_fft_bins)
+    up_slope = (mel_freqs[None, :] - left_mel[:, None]) / (center_mel[:, None] - left_mel[:, None])
+    down_slope = (right_mel[:, None] - mel_freqs[None, :]) / (right_mel[:, None] - center_mel[:, None])
+    mel_banks = np.maximum(0.0, np.minimum(up_slope, down_slope)).astype(np.float32)
+
+    # Pad to match spectrum size (num_fft_bins + 1)
+    mel_banks = np.pad(mel_banks, ((0, 0), (0, 1)))
+
+    # Apply mel filterbank
+    mel_energies = power_spectrum @ mel_banks.T
+    mel_energies = np.maximum(mel_energies, np.finfo(np.float32).eps)
+    log_mel = np.log(mel_energies)
+
+    return log_mel.astype(np.float32)
+
+
+class SVModel:
+    """Speaker Verification model (ERes2NetV2) for computing sv_emb."""
+
+    def __init__(self, sess):
+        self.sess = sess
+
+    def forward(self, ref_audio_16k):
+        """Compute speaker verification embedding from 16kHz audio.
+
+        Args:
+            ref_audio_16k: numpy array of shape (num_samples,), 16kHz audio
+
+        Returns:
+            sv_emb: numpy array of shape (1, 20480)
+        """
+        if args.benchmark:
+            start = int(round(time.time() * 1000))
+
+        fbank_feat = compute_kaldi_fbank(ref_audio_16k, sample_rate=16000, num_mel_bins=80)
+        fbank_feat = fbank_feat[np.newaxis, :, :]  # (1, T, 80)
+
+        if args.onnx:
+            sv_emb = self.sess.run(None, {"fbank_feat": fbank_feat})
+        else:
+            sv_emb = self.sess.run({"fbank_feat": fbank_feat})
+
+        if args.benchmark:
+            end = int(round(time.time() * 1000))
+            logger.info("\tsv processing time {} ms".format(end - start))
+        return sv_emb[0]
 
 
 def get_phones_and_bert(text, language, bert_model=None, bert_tokenizer=None, final=False):
@@ -458,7 +581,7 @@ def get_phones_and_bert(text, language, bert_model=None, bert_tokenizer=None, fi
     return phones, bert, norm_text
 
 
-def generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits, bert=None):
+def generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits, sv, bert=None):
     gpt = T2SModel(
         t2s_encoder,
         t2s_first_decoder,
@@ -466,6 +589,7 @@ def generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits,
     )
     gpt_sovits = GptSoVits(gpt, vits)
     ssl = SSLModel(ssl)
+    sv = SVModel(sv)
 
     use_zh = args.text_language == "zh" or args.ref_language == "zh"
     bert_tokenizer = None
@@ -501,6 +625,9 @@ def generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits,
         logger.warning(
             "Reference audio is outside the 3-10 second range, please choose another one!"
         )
+
+    # Compute speaker verification embedding from 16kHz audio
+    sv_emb = sv.forward(ref_audio_16k.astype(np.float32))
 
     # padding for hubert input
     ref_audio_16k = np.concatenate([ref_audio_16k, zero_wav], axis=0)
@@ -539,6 +666,7 @@ def generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits,
             text_bert.T,
             ref_audio,
             ssl_content,
+            sv_emb,
             top_k=top_k,
             top_p=top_p,
             temperature=temperature,
@@ -575,6 +703,7 @@ def main():
         WEIGHT_PATH_T2S_STAGE_DECODER, MODEL_PATH_T2S_STAGE_DECODER, REMOTE_PATH
     )
     check_and_download_models(WEIGHT_PATH_VITS, MODEL_PATH_VITS, REMOTE_PATH)
+    check_and_download_models(WEIGHT_PATH_SV, MODEL_PATH_SV, REMOTE_PATH)
     if use_zh:
         BERT_REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v3/"
         check_and_download_models(WEIGHT_PATH_BERT, MODEL_PATH_BERT, BERT_REMOTE_PATH)
@@ -589,6 +718,7 @@ def main():
         t2s_first_decoder = onnxruntime.InferenceSession(WEIGHT_PATH_T2S_FIRST_DECODER)
         t2s_stage_decoder = onnxruntime.InferenceSession(WEIGHT_PATH_T2S_STAGE_DECODER)
         vits = onnxruntime.InferenceSession(WEIGHT_PATH_VITS)
+        sv_net = onnxruntime.InferenceSession(WEIGHT_PATH_SV)
         bert_net = onnxruntime.InferenceSession(WEIGHT_PATH_BERT) if use_zh else None
     else:
         memory_mode = ailia.get_memory_mode(
@@ -627,6 +757,12 @@ def main():
             memory_mode=memory_mode,
             env_id=env_id,
         )
+        sv_net = ailia.Net(
+            weight=WEIGHT_PATH_SV,
+            stream=MODEL_PATH_SV,
+            memory_mode=memory_mode,
+            env_id=env_id,
+        )
         bert_net = ailia.Net(
             weight=WEIGHT_PATH_BERT,
             stream=MODEL_PATH_BERT,
@@ -639,6 +775,7 @@ def main():
             t2s_first_decoder.set_profile_mode(True)
             t2s_stage_decoder.set_profile_mode(True)
             vits.set_profile_mode(True)
+            sv_net.set_profile_mode(True)
             if bert_net is not None:
                 bert_net.set_profile_mode(True)
         pf = platform.system()
@@ -651,7 +788,7 @@ def main():
     if args.benchmark:
         start = int(round(time.time() * 1000))
 
-    generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits, bert_net)
+    generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits, sv_net, bert_net)
 
     if args.benchmark:
         end = int(round(time.time() * 1000))
@@ -668,6 +805,8 @@ def main():
         print(t2s_stage_decoder.get_summary())
         print("vits : ")
         print(vits.get_summary())
+        print("sv : ")
+        print(sv_net.get_summary())
         if bert_net is not None:
             print("bert : ")
             print(bert_net.get_summary())
