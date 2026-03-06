@@ -49,6 +49,10 @@ $ python3 depth_anything_v2.py -v 0
 argument after the ```-v``` option can be the device id of the webcam,
 or the path to the input video.
 
+## Requirements
+
+This model requires ailia SDK 1.2.16 and later.
+
 ## Reference
 
 * [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2)
