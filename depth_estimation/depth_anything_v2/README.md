@@ -40,7 +40,7 @@ $ python3 depth_anything_v2.py -i input.png -s output.png -ec vitl
 ```-i```, ```-s```, ```-ec``` options can be used to specify the
 input path, save path, and encoder type separately.
 
-Available encoder types: ```vits```, ```vitb```, ```vitl```, ```vitg```
+Available encoder types: ```vits```, ```vitb```, ```vitl```
 
 #### Example 3: Inference on Video.
 ```bash

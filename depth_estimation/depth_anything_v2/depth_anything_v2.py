@@ -34,9 +34,6 @@ MODEL_PATH_B = "depth_anything_v2_vitb.onnx.prototxt"
 WEIGHT_PATH_L = "depth_anything_v2_vitl.onnx"
 MODEL_PATH_L = "depth_anything_v2_vitl.onnx.prototxt"
 
-WEIGHT_PATH_G = "depth_anything_v2_vitg.onnx"
-MODEL_PATH_G = "depth_anything_v2_vitg.onnx.prototxt"
-
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/depth_anything_v2/"
 
 DEFAULT_INPUT_PATH = 'demo1.png'
@@ -51,7 +48,7 @@ parser = get_base_parser(
 
 parser.add_argument(
     '--encoder', '-ec', type=str, default='vits',
-    help='model type. vits, vitb, vitl, vitg'
+    help='model type: vits, vitb, vitl'
 )
 
 parser.add_argument(
@@ -95,7 +92,7 @@ def plot_image(image, depth, savepath=None):
 
 
 def post_process(depth, h, w):
-    depth = cv2.resize(depth[0, 0], dsize=(w, h), interpolation=cv2.INTER_LINEAR)
+    depth = cv2.resize(depth[0], dsize=(w, h), interpolation=cv2.INTER_LINEAR)
     depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
     if not args.grey:
         depth = depth.astype(np.uint8)
@@ -167,20 +164,17 @@ def recognize_from_video(model):
 
 def main():
     # model files check and download
-    assert args.encoder in ['vits', 'vitb', 'vitl', 'vitg'], \
-        'encoder should be vits, vitb, vitl, or vitg'
+    assert args.encoder in ['vits', 'vitb', 'vitl'], \
+        'encoder should be vits, vitb, or vitl'
     if args.encoder == 'vits':
         WEIGHT_PATH = WEIGHT_PATH_S
         MODEL_PATH = MODEL_PATH_S
     elif args.encoder == 'vitb':
         WEIGHT_PATH = WEIGHT_PATH_B
         MODEL_PATH = MODEL_PATH_B
-    elif args.encoder == 'vitl':
+    else:
         WEIGHT_PATH = WEIGHT_PATH_L
         MODEL_PATH = MODEL_PATH_L
-    else:
-        WEIGHT_PATH = WEIGHT_PATH_G
-        MODEL_PATH = MODEL_PATH_G
 
     check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
 
