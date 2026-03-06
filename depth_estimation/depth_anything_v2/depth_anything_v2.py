@@ -25,14 +25,14 @@ logger = getLogger(__name__)
 # Parameters
 # ======================
 
-WEIGHT_PATH_S = "depth_anything_v2_vits.onnx"
-MODEL_PATH_S = "depth_anything_v2_vits.onnx.prototxt"
+WEIGHT_PATH_S = "depth_anything_v2_depth_anything_v2_vits.onnx"
+MODEL_PATH_S = "depth_anything_v2_depth_anything_v2_vits.onnx.prototxt"
 
-WEIGHT_PATH_B = "depth_anything_v2_vitb.onnx"
-MODEL_PATH_B = "depth_anything_v2_vitb.onnx.prototxt"
+WEIGHT_PATH_B = "depth_anything_v2_depth_anything_v2_vitb.onnx"
+MODEL_PATH_B = "depth_anything_v2_depth_anything_v2_vitb.onnx.prototxt"
 
-WEIGHT_PATH_L = "depth_anything_v2_vitl.onnx"
-MODEL_PATH_L = "depth_anything_v2_vitl.onnx.prototxt"
+WEIGHT_PATH_L = "depth_anything_v2_depth_anything_v2_vitl.onnx"
+MODEL_PATH_L = "depth_anything_v2_depth_anything_v2_vitl.onnx.prototxt"
 
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/depth_anything_v2/"
 

@@ -63,3 +63,6 @@ ONNX opset=17
 
 ## Netron
 
+[depth_anything_v2_depth_anything_v2_vits.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/depth_anything_v2/depth_anything_v2_depth_anything_v2_vits.onnx.prototxt)
+[depth_anything_v2_depth_anything_v2_vitb.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/depth_anything_v2/depth_anything_v2_depth_anything_v2_vitb.onnx.prototxt)
+[depth_anything_v2_depth_anything_v2_vitl.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/depth_anything_v2/depth_anything_v2_depth_anything_v2_vitl.onnx.prototxt)
