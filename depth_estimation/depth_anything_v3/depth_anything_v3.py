@@ -62,13 +62,16 @@ args = update_parser(parser)
 # Helper functions
 # ======================
 
+INPUT_SIZE = 504
+
+
 class get_depth_anything_v3_ts():
     def __init__(self, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
         self.mean = mean
         self.std = std
         self.resize = Resize(
-            width=504,
-            height=504,
+            width=INPUT_SIZE,
+            height=INPUT_SIZE,
             resize_target=False,
             keep_aspect_ratio=True,
             ensure_multiple_of=14,
@@ -85,14 +88,32 @@ class get_depth_anything_v3_ts():
         return image
 
 
+def pad_to_input_size(image):
+    """Pad image to INPUT_SIZE x INPUT_SIZE and return original dimensions."""
+    _, h, w = image.shape
+    pad_h = INPUT_SIZE - h
+    pad_w = INPUT_SIZE - w
+    if pad_h > 0 or pad_w > 0:
+        image = np.pad(image, ((0, 0), (0, pad_h), (0, pad_w)),
+                       mode='constant', constant_values=0)
+    return image, h, w
+
+
 def plot_image(image, depth, savepath=None):
     if savepath is not None:
         logger.info(f'saving result to {savepath}')
         cv2.imwrite(savepath, depth)
 
 
-def post_process(depth, h, w):
-    depth = cv2.resize(depth[0], dsize=(w, h), interpolation=cv2.INTER_LINEAR)
+def post_process(depth, orig_h, orig_w, h, w):
+    # Handle (1, 1, H, W) output
+    if depth.ndim == 4:
+        depth = depth[0, 0]
+    elif depth.ndim == 3:
+        depth = depth[0]
+    # Crop padding
+    depth = depth[:orig_h, :orig_w]
+    depth = cv2.resize(depth, dsize=(w, h), interpolation=cv2.INTER_LINEAR)
     depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
     if not args.grey:
         depth = depth.astype(np.uint8)
@@ -112,9 +133,12 @@ def recognize_from_image(model):
     for image_path in args.input:
         # prepare input data
         org_img = cv2.cvtColor(imread(image_path), cv2.COLOR_BGR2RGB) / 255.
+        is_portrait = org_img.shape[0] > org_img.shape[1]
 
-        image = da_transform({'image': org_img})['image'][None]
-        if org_img.shape[0] > org_img.shape[1]:
+        image = da_transform({'image': org_img})['image']
+        image, orig_h, orig_w = pad_to_input_size(image)
+        image = image[None]
+        if is_portrait:
             image = image.transpose((0, 1, 3, 2))
         if args.benchmark and not (args.video is not None):
             logger.info('BENCHMARK mode')
@@ -125,9 +149,9 @@ def recognize_from_image(model):
                 logger.info(f'\tailia processing time {end - start} ms')
         else:
             depth = model.predict(image)
-        if org_img.shape[0] > org_img.shape[1]:
-            depth = depth.transpose((0, 1, 3, 2))
-        depth = post_process(depth, org_img.shape[0], org_img.shape[1])
+        if is_portrait:
+            depth = depth.transpose((0, 1, 3, 2)) if depth.ndim == 4 else depth.transpose((0, 2, 1))
+        depth = post_process(depth, orig_h, orig_w, org_img.shape[0], org_img.shape[1])
 
         # visualize
         plot_image(org_img, depth, args.savepath)
@@ -150,9 +174,11 @@ def recognize_from_video(model):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) / 255.
 
         # inference
-        image = da_transform({'image': frame})['image'][None]
+        image = da_transform({'image': frame})['image']
+        image, orig_h, orig_w = pad_to_input_size(image)
+        image = image[None]
         depth = model.predict(image)
-        depth = post_process(depth, frame.shape[0], frame.shape[1])
+        depth = post_process(depth, orig_h, orig_w, frame.shape[0], frame.shape[1])
 
         # visualize
         cv2.imshow("frame", depth)
