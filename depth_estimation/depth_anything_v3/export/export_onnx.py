@@ -22,8 +22,12 @@ def get_args():
         help='ONNX opset version'
     )
     parser.add_argument(
-        '--input_size', type=int, default=504,
-        help='input image size (default: 504, must be multiple of 14)'
+        '--input_height', type=int, default=336,
+        help='input image height (default: 336, must be multiple of 14)'
+    )
+    parser.add_argument(
+        '--input_width', type=int, default=504,
+        help='input image width (default: 504, must be multiple of 14)'
     )
     return parser.parse_args()
 
@@ -61,8 +65,10 @@ def main():
 
     assert args.encoder in model_name_map, \
         f'encoder should be one of {list(model_name_map.keys())}'
-    assert args.input_size % 14 == 0, \
-        f'input_size must be a multiple of 14, got {args.input_size}'
+    assert args.input_height % 14 == 0, \
+        f'input_height must be a multiple of 14, got {args.input_height}'
+    assert args.input_width % 14 == 0, \
+        f'input_width must be a multiple of 14, got {args.input_width}'
 
     # Install depth_anything_3 before running:
     #   pip install depth-anything-3
@@ -94,6 +100,11 @@ def main():
         filename='model.safetensors',
     )
     state_dict = load_file(weight_path)
+    # Strip 'model.' prefix from HuggingFace checkpoint keys
+    state_dict = {
+        k[len('model.'):] if k.startswith('model.') else k: v
+        for k, v in state_dict.items()
+    }
     model.load_state_dict(state_dict, strict=False)
     model.eval()
 
@@ -107,11 +118,12 @@ def main():
         output_path = args.output
 
     # Create dummy input
-    input_size = args.input_size
-    dummy_input = torch.randn(1, 3, input_size, input_size)
+    input_h = args.input_height
+    input_w = args.input_width
+    dummy_input = torch.randn(1, 3, input_h, input_w)
 
     print(f'Exporting {args.encoder} model to {output_path}...')
-    print(f'Input size: {input_size}x{input_size}')
+    print(f'Input size: {input_h}x{input_w}')
 
     torch.onnx.export(
         wrapper,
