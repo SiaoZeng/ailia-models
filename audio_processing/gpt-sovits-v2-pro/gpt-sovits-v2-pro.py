@@ -706,9 +706,11 @@ def main():
 
     if args.distill:
         REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro-distill/"
-        WEIGHT_PATH_T2S_ENCODER = "t2s_encoder_distill_small.onnx"
-        WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec_distill_small.onnx"
-        WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec_distill_small.opt.onnx"
+        #MODEL_SIZE = "small"
+        MODEL_SIZE = "base"
+        WEIGHT_PATH_T2S_ENCODER = "t2s_encoder_distill_"+MODEL_SIZE+".onnx"
+        WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec_distill_"+MODEL_SIZE+".onnx"
+        WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec_distill_"+MODEL_SIZE+".opt.onnx"
         MODEL_PATH_T2S_ENCODER = None
         MODEL_PATH_T2S_FIRST_DECODER = None
         MODEL_PATH_T2S_STAGE_DECODER = None
