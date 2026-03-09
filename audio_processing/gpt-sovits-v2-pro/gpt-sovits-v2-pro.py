@@ -86,6 +86,7 @@ parser.add_argument("--temperature", type=float, default=1.0, help="temperature"
 parser.add_argument("--speed", type=float, default=1.0, help="Speech rate")
 parser.add_argument("--onnx", action="store_true", help="use onnx runtime")
 parser.add_argument("--profile", action="store_true", help="use profile model")
+parser.add_argument("--distill", action="store_true", help="use distill model")
 args = update_parser(parser, check_input_type=False)
 
 
@@ -691,10 +692,27 @@ def generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits,
 
 
 def main():
+    global REMOTE_PATH, WEIGHT_PATH_T2S_ENCODER, WEIGHT_PATH_T2S_FIRST_DECODER, WEIGHT_PATH_T2S_STAGE_DECODER, MODEL_PATH_T2S_ENCODER, MODEL_PATH_T2S_FIRST_DECODER, MODEL_PATH_T2S_STAGE_DECODER
+
     use_zh = args.text_language == "zh" or args.ref_language == "zh"
 
     # model files check and download
     check_and_download_models(WEIGHT_PATH_SSL, MODEL_PATH_SSL, REMOTE_PATH)
+    check_and_download_models(WEIGHT_PATH_VITS, MODEL_PATH_VITS, REMOTE_PATH)
+    check_and_download_models(WEIGHT_PATH_SV, MODEL_PATH_SV, REMOTE_PATH)
+
+    if use_zh:
+        check_and_download_models(WEIGHT_PATH_BERT, MODEL_PATH_BERT, REMOTE_PATH)
+
+    if args.distill:
+        REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro-distill/"
+        WEIGHT_PATH_T2S_ENCODER = "t2s_encoder_distill_small.onnx"
+        WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec_distill_small.onnx"
+        WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec_distill_small.opt.onnx"
+        MODEL_PATH_T2S_ENCODER = None
+        MODEL_PATH_T2S_FIRST_DECODER = None
+        MODEL_PATH_T2S_STAGE_DECODER = None
+
     check_and_download_models(
         WEIGHT_PATH_T2S_ENCODER, MODEL_PATH_T2S_ENCODER, REMOTE_PATH
     )
@@ -704,11 +722,6 @@ def main():
     check_and_download_models(
         WEIGHT_PATH_T2S_STAGE_DECODER, MODEL_PATH_T2S_STAGE_DECODER, REMOTE_PATH
     )
-    check_and_download_models(WEIGHT_PATH_VITS, MODEL_PATH_VITS, REMOTE_PATH)
-    check_and_download_models(WEIGHT_PATH_SV, MODEL_PATH_SV, REMOTE_PATH)
-    if use_zh:
-        BERT_REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v3/"
-        check_and_download_models(WEIGHT_PATH_BERT, MODEL_PATH_BERT, BERT_REMOTE_PATH)
 
     env_id = args.env_id
 
