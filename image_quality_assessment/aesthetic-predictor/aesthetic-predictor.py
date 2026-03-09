@@ -84,7 +84,7 @@ def setup_clip(net_image=None, use_open_clip=False):
 
         config = CLIP_MODEL_CONFIGS[args.model_type]
         clip_model, _, preprocess = open_clip.create_model_and_transforms(
-            config["open_clip_name"], pretrained="openai"
+            config["open_clip_name"], pretrained="openai", quick_gelu=True
         )
         clip_model.eval()
 
