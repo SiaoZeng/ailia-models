@@ -86,7 +86,7 @@ parser.add_argument("--temperature", type=float, default=1.0, help="temperature"
 parser.add_argument("--speed", type=float, default=1.0, help="Speech rate")
 parser.add_argument("--onnx", action="store_true", help="use onnx runtime")
 parser.add_argument("--profile", action="store_true", help="use profile model")
-parser.add_argument("--distill", type=str, default=None, help="use distill model", choices=("tiny", "base", "small"))
+parser.add_argument("--distill", type=str, default=None, help="use distill model", choices=(None, "tiny", "base", "small"))
 args = update_parser(parser, check_input_type=False)
 
 
