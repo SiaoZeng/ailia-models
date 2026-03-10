@@ -86,7 +86,7 @@ parser.add_argument("--temperature", type=float, default=1.0, help="temperature"
 parser.add_argument("--speed", type=float, default=1.0, help="Speech rate")
 parser.add_argument("--onnx", action="store_true", help="use onnx runtime")
 parser.add_argument("--profile", action="store_true", help="use profile model")
-parser.add_argument("--distill", action="store_true", help="use distill model")
+parser.add_argument("--distill", type=str, default=None, help="use distill model", choices=("tiny", "base", "small"))
 args = update_parser(parser, check_input_type=False)
 
 
@@ -704,10 +704,9 @@ def main():
     if use_zh:
         check_and_download_models(WEIGHT_PATH_BERT, MODEL_PATH_BERT, REMOTE_PATH)
 
-    if args.distill:
+    if args.distill is not None:
         REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro-distill/"
-        #MODEL_SIZE = "small"
-        MODEL_SIZE = "base"
+        MODEL_SIZE = args.distill
         WEIGHT_PATH_T2S_ENCODER = "t2s_encoder_distill_"+MODEL_SIZE+".onnx"
         WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec_distill_"+MODEL_SIZE+".onnx"
         WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec_distill_"+MODEL_SIZE+".opt.onnx"
