@@ -1,4 +1,5 @@
 import sys
+import os
 import argparse
 
 import torch
@@ -74,7 +75,7 @@ def main():
     model.eval()
 
     if args.output is None:
-        output_path = f'depth_anything_v2_{args.encoder}.onnx'
+        output_path = f'depth_anything_v2_depth_anything_v2_{args.encoder}.onnx'
     else:
         output_path = args.output
 
@@ -85,6 +86,9 @@ def main():
     print(f'Exporting {args.encoder} model to {output_path}...')
     print(f'Input size: {input_size}x{input_size}')
 
+    # Use legacy exporter to produce a single self-contained ONNX file
+    # Note: dynamic_axes not used because DINOv2 position embeddings
+    # are baked in during tracing and do not support non-square inputs.
     torch.onnx.export(
         model,
         dummy_input,
@@ -92,11 +96,18 @@ def main():
         opset_version=args.opset,
         input_names=['image'],
         output_names=['depth'],
-        dynamic_axes={
-            'image': {0: 'batch_size', 2: 'height', 3: 'width'},
-            'depth': {0: 'batch_size', 1: 'height', 2: 'width'},
-        },
+        dynamo=False,
     )
+
+    # If external data file was created, merge into single file
+    ext_data_path = output_path + '.data'
+    if os.path.exists(ext_data_path):
+        import onnx
+        print('Merging external data into single ONNX file...')
+        onnx_model = onnx.load(output_path, load_external_data=True)
+        onnx.save(onnx_model, output_path)
+        if os.path.exists(ext_data_path):
+            os.remove(ext_data_path)
 
     print(f'Successfully exported to {output_path}')
 
