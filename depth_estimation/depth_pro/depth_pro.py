@@ -36,7 +36,7 @@ DEFAULT_SAVE_PATH = 'output.png'
 # Arguemnt Parser Config
 # ======================
 parser = get_base_parser(
-    'Depth Pro', DEFAULT_INPUT_PATH, DEFAULT_SAVE_PATH
+    'Depth Pro', DEFAULT_INPUT_PATH, DEFAULT_SAVE_PATH, large_model = True
 )
 
 parser.add_argument(
@@ -169,7 +169,8 @@ def main():
     check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
 
     # net initialize
-    model = ailia.Net(MODEL_PATH, WEIGHT_PATH, env_id=args.env_id)
+    memory_mode = ailia.get_memory_mode(reduce_constant=True, ignore_input_with_initializer=True, reduce_interstage=False, reuse_interstage=True)
+    model = ailia.Net(MODEL_PATH, WEIGHT_PATH, env_id=args.env_id, memory_mode=memory_mode)
 
     if args.video is not None:
         # video mode
