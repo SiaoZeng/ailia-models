@@ -31,6 +31,7 @@ REF_WAV_PATH = "reference_audio_captured_by_ax.wav"
 REF_TEXT = "水をマレーシアから買わなくてはならない。"
 SAVE_WAV_PATH = "output.wav"
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro/"
+REMOTE_PATH_T2S = REMOTE_PATH
 WEIGHT_PATH_SSL = "cnhubert.onnx"
 WEIGHT_PATH_T2S_ENCODER = "t2s_encoder.onnx"
 WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec.onnx"
@@ -106,6 +107,20 @@ COPY_BLOB_DATA = not (
     and AILIA_VERSION_REVISION < 15
 )
 
+
+# ======================
+# Distill models
+# ======================
+
+if args.distill is not None:
+    REMOTE_PATH_T2S = "https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro-distill/"
+    MODEL_SIZE = args.distill
+    WEIGHT_PATH_T2S_ENCODER = "t2s_encoder_distill_"+MODEL_SIZE+".onnx"
+    WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec_distill_"+MODEL_SIZE+".onnx"
+    WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec_distill_"+MODEL_SIZE+".opt.onnx"
+    MODEL_PATH_T2S_ENCODER = None
+    MODEL_PATH_T2S_FIRST_DECODER = None
+    MODEL_PATH_T2S_STAGE_DECODER = None
 
 # ======================
 # Secondary Functions
@@ -692,37 +707,23 @@ def generate_voice(ssl, t2s_encoder, t2s_first_decoder, t2s_stage_decoder, vits,
 
 
 def main():
-    global REMOTE_PATH, WEIGHT_PATH_T2S_ENCODER, WEIGHT_PATH_T2S_FIRST_DECODER, WEIGHT_PATH_T2S_STAGE_DECODER, MODEL_PATH_T2S_ENCODER, MODEL_PATH_T2S_FIRST_DECODER, MODEL_PATH_T2S_STAGE_DECODER
-
     use_zh = args.text_language == "zh" or args.ref_language == "zh"
 
     # model files check and download
     check_and_download_models(WEIGHT_PATH_SSL, MODEL_PATH_SSL, REMOTE_PATH)
     check_and_download_models(WEIGHT_PATH_VITS, MODEL_PATH_VITS, REMOTE_PATH)
     check_and_download_models(WEIGHT_PATH_SV, MODEL_PATH_SV, REMOTE_PATH)
-
+    check_and_download_models(
+        WEIGHT_PATH_T2S_ENCODER, MODEL_PATH_T2S_ENCODER, REMOTE_PATH_T2S
+    )
+    check_and_download_models(
+        WEIGHT_PATH_T2S_FIRST_DECODER, MODEL_PATH_T2S_FIRST_DECODER, REMOTE_PATH_T2S
+    )
+    check_and_download_models(
+        WEIGHT_PATH_T2S_STAGE_DECODER, MODEL_PATH_T2S_STAGE_DECODER, REMOTE_PATH_T2S
+    )
     if use_zh:
         check_and_download_models(WEIGHT_PATH_BERT, MODEL_PATH_BERT, REMOTE_PATH)
-
-    if args.distill is not None:
-        REMOTE_PATH = "https://storage.googleapis.com/ailia-models/gpt-sovits-v2-pro-distill/"
-        MODEL_SIZE = args.distill
-        WEIGHT_PATH_T2S_ENCODER = "t2s_encoder_distill_"+MODEL_SIZE+".onnx"
-        WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec_distill_"+MODEL_SIZE+".onnx"
-        WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec_distill_"+MODEL_SIZE+".opt.onnx"
-        MODEL_PATH_T2S_ENCODER = None
-        MODEL_PATH_T2S_FIRST_DECODER = None
-        MODEL_PATH_T2S_STAGE_DECODER = None
-
-    check_and_download_models(
-        WEIGHT_PATH_T2S_ENCODER, MODEL_PATH_T2S_ENCODER, REMOTE_PATH
-    )
-    check_and_download_models(
-        WEIGHT_PATH_T2S_FIRST_DECODER, MODEL_PATH_T2S_FIRST_DECODER, REMOTE_PATH
-    )
-    check_and_download_models(
-        WEIGHT_PATH_T2S_STAGE_DECODER, MODEL_PATH_T2S_STAGE_DECODER, REMOTE_PATH
-    )
 
     env_id = args.env_id
 
