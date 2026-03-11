@@ -24,9 +24,12 @@ If you would like to try on your computer:
 [ailia-models wiki](https://deepwiki.com/ailia-ai/ailia-models)
 
 # Supported models
-396 models as of January 16, 2026
+401 models as of March 6, 2026
 
 # Latest update
+- 2026.03.06 Add depth_anything_v2
+- 2026.03.04 Add gpt-sovits-v2-pro, bevformer, uniad
+- 2026.03.02 Add g2pw, gpt-sovits-v1, v2, v3 (chinese)
 - 2026.01.16 Add embeddinggemma
 - 2025.12.30 Add demucs, latentsync
 - 2025.12.26 Add sadtalker
