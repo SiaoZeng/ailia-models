@@ -56,8 +56,8 @@ args = update_parser(parser)
 # Models
 # ======================
 
-REMOTE_PATH_SENSEVOICE = "https://storage.googleapis.com/ailia-models/sensevoice/"
-REMOTE_PATH_VAD = "https://storage.googleapis.com/ailia-models/sensevoice/"
+REMOTE_PATH = "https://storage.googleapis.com/ailia-models/sensevoice/"
+REMOTE_PATH_VAD = REMOTE_PATH
 
 if args.fp16:
 	WEIGHT_PATH = "sensevoice_small_fp16.onnx"
@@ -70,7 +70,7 @@ MODEL_PATH = WEIGHT_PATH + ".prototxt"
 VAD_MODEL_PATH = VAD_WEIGHT_PATH + ".prototxt"
 
 if args.finetuning is not None:
-	REMOTE_PATH_SENSEVOICE = "https://storage.googleapis.com/ailia-models/sensevoice-finetuning/"
+	REMOTE_PATH = "https://storage.googleapis.com/ailia-models/sensevoice-finetuning/"
 	WEIGHT_PATH = "sensevoice_small_" + args.finetuning + ".onnx"
 	MODEL_PATH = None
 
@@ -231,7 +231,7 @@ def recognize_from_mic():
 	logger.info("Script finished successfully.")
 
 def main():
-	check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH_SENSEVOICE)
+	check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
 	check_and_download_models(VAD_WEIGHT_PATH, VAD_MODEL_PATH, REMOTE_PATH_VAD)
 	
 	if args.V:
