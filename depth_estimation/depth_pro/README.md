@@ -54,6 +54,7 @@ This model requires ailia SDK 1.2.16 and later.
 ## Reference
 
 * [Depth Pro: Sharp Monocular Metric Depth in Less Than a Second](https://github.com/apple/ml-depth-pro)
+* [onnx-community/DepthPro-ONNX](https://huggingface.co/onnx-community/DepthPro-ONNX)
 
 ## Framework
 
