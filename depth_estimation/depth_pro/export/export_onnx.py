@@ -18,6 +18,10 @@ def get_args():
         '--opset', type=int, default=18,
         help='ONNX opset version'
     )
+    parser.add_argument(
+        '--fp16', action='store_true',
+        help='Export model in float16 precision'
+    )
     return parser.parse_args()
 
 
@@ -46,11 +50,13 @@ def main():
         print("Then run this script from within the ml-depth-pro directory.")
         sys.exit(1)
 
-    print('Loading DepthPro model...')
+    precision = torch.float16 if args.fp16 else torch.float32
+
+    print(f'Loading DepthPro model ({"fp16" if args.fp16 else "fp32"})...')
     model, transform = create_model_and_transforms(
         config=DEFAULT_MONODEPTH_CONFIG_DICT,
         device=torch.device("cpu"),
-        precision=torch.float32,
+        precision=precision,
     )
     model.eval()
 
@@ -61,7 +67,7 @@ def main():
 
     # DepthPro expects 1536x1536 input
     img_size = model.img_size
-    dummy_input = torch.randn(1, 3, img_size, img_size)
+    dummy_input = torch.randn(1, 3, img_size, img_size, dtype=precision)
 
     print(f'Exporting DepthPro model to {output_path}...')
     print(f'Input size: {img_size}x{img_size}')

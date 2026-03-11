@@ -12,7 +12,7 @@ from logging import getLogger  # noqa: E402
 
 import webcamera_utils  # noqa: E402
 from image_utils import imread  # noqa: E402
-from model_utils import check_and_download_models, check_and_download_file  # noqa: E402
+from model_utils import check_and_download_models  # noqa: E402
 from arg_utils import get_base_parser, get_savepath, update_parser  # noqa: E402
 
 logger = getLogger(__name__)
@@ -24,7 +24,6 @@ logger = getLogger(__name__)
 
 WEIGHT_PATH = "depth_pro.onnx"
 MODEL_PATH = "depth_pro.onnx.prototxt"
-DATA_PATH = "depth_pro.onnx.data"
 
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/depth_pro/"
 
@@ -80,32 +79,21 @@ def preprocess(image):
     return image, h, w
 
 
-def post_process(canonical_inverse_depth, fov_deg, h, w):
-    """Convert canonical inverse depth and fov to metric depth map.
+def post_process(predicted_depth, h, w):
+    """Convert predicted depth to visualization.
 
     Args:
-        canonical_inverse_depth: (1, 1, 1536, 1536)
-        fov_deg: scalar, field of view in degrees
+        predicted_depth: (1, 1536, 1536) depth in meters
         h: original height
         w: original width
 
     Returns:
         depth visualization: (h, w, 3) uint8 or (h, w) float
     """
-    # Compute focal length in pixels from FOV
-    f_px = 0.5 * w / np.tan(0.5 * np.deg2rad(fov_deg))
-
-    # Convert canonical inverse depth to metric inverse depth
-    inverse_depth = canonical_inverse_depth[0, 0] * (w / f_px)
+    depth = predicted_depth[0]
 
     # Resize to original resolution
-    inverse_depth = cv2.resize(
-        inverse_depth, (w, h), interpolation=cv2.INTER_LINEAR
-    )
-
-    # Convert inverse depth to depth
-    inverse_depth = np.clip(inverse_depth, 1e-4, 1e4)
-    depth = 1.0 / inverse_depth
+    depth = cv2.resize(depth, (w, h), interpolation=cv2.INTER_LINEAR)
 
     # Normalize for visualization
     depth_vis = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
@@ -132,16 +120,15 @@ def recognize_from_image(model):
             logger.info('BENCHMARK mode')
             for i in range(5):
                 start = int(round(time.time() * 1000))
-                output = model.predict(image)
+                output = model.predict([image])
                 end = int(round(time.time() * 1000))
                 logger.info(f'\tailia processing time {end - start} ms')
         else:
-            output = model.predict(image)
+            output = model.predict([image])
 
-        canonical_inverse_depth = output[0]
-        fov_deg = output[1].item()
+        predicted_depth = output[0]
 
-        depth_vis = post_process(canonical_inverse_depth, fov_deg, h, w)
+        depth_vis = post_process(predicted_depth, h, w)
 
         savepath = get_savepath(args.savepath, image_path, ext='.png')
         logger.info(f'saving result to {savepath}')
@@ -163,12 +150,11 @@ def recognize_from_video(model):
 
         # inference
         image, h, w = preprocess(frame)
-        output = model.predict(image)
+        output = model.predict([image])
 
-        canonical_inverse_depth = output[0]
-        fov_deg = output[1].item()
+        predicted_depth = output[0]
 
-        depth_vis = post_process(canonical_inverse_depth, fov_deg, h, w)
+        depth_vis = post_process(predicted_depth, h, w)
 
         # visualize
         cv2.imshow("frame", depth_vis)
@@ -181,7 +167,6 @@ def recognize_from_video(model):
 def main():
     # model files check and download
     check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
-    check_and_download_file(DATA_PATH, REMOTE_PATH + DATA_PATH)
 
     # net initialize
     model = ailia.Net(MODEL_PATH, WEIGHT_PATH, env_id=args.env_id)
