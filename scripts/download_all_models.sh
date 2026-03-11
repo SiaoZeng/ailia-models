@@ -96,6 +96,7 @@ cd ../../depth_estimation/mobilestereonet; python3 mobilestereonet.py ${OPTION}
 cd ../../depth_estimation/depth_anything; python3 depth_anything.py ${OPTION}
 cd ../../depth_estimation/depth_anything_v2; python3 depth_anything_v2.py ${OPTION}
 cd ../../depth_estimation/depth_anything_v3; python3 depth_anything_v3.py ${OPTION}
+cd ../../depth_estimation/depth_pro; python3 depth_pro.py ${OPTION}
 cd ../../face_detection/blazeface; python3 blazeface.py ${OPTION}
 cd ../../face_detection/zoe_depth; python3 zoe_depth ${OPTION}
 cd ../../face_detection/dbface; python3 dbface.py ${OPTION}

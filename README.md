@@ -24,9 +24,12 @@ If you would like to try on your computer:
 [ailia-models wiki](https://deepwiki.com/ailia-ai/ailia-models)
 
 # Supported models
-396 models as of January 16, 2026
+401 models as of March 6, 2026
 
 # Latest update
+- 2026.03.06 Add depth_anything_v2
+- 2026.03.04 Add gpt-sovits-v2-pro, bevformer, uniad
+- 2026.03.02 Add g2pw, gpt-sovits-v1, v2, v3 (chinese)
 - 2026.01.16 Add embeddinggemma
 - 2025.12.30 Add demucs, latentsync
 - 2025.12.26 Add sadtalker
@@ -216,6 +219,7 @@ If you would like to try on your computer:
 | [<img src="depth_estimation/depth_anything/output.png" width=256px>](depth_estimation/depth_anything/) |[DepthAnything](depth_estimation/depth_anything)| [DepthAnything](https://github.com/LiheYoung/Depth-Anything) | Pytorch | 1.2.9 and later |
 | [<img src="depth_estimation/depth_anything_v2/output.png" width=256px>](depth_estimation/depth_anything_v2/) |[DepthAnythingV2](depth_estimation/depth_anything_v2)| [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2) | Pytorch | 1.2.16 and later |
 | [<img src="depth_estimation/depth_anything_v3/output.png" width=256px>](depth_estimation/depth_anything_v3/) |[DepthAnythingV3](depth_estimation/depth_anything_v3)| [Depth Anything V3](https://github.com/ByteDance-Seed/Depth-Anything-3) | Pytorch | 1.2.16 and later |
+| [<img src="depth_estimation/depth_pro/output.png" width=256px>](depth_estimation/depth_pro/) |[DepthPro](depth_estimation/depth_pro)| [Depth Pro: Sharp Monocular Metric Depth in Less Than a Second](https://github.com/apple/ml-depth-pro) | Pytorch | 1.2.12 and later |
 
 ## Diffusion
 
