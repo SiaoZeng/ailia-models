@@ -218,6 +218,7 @@ If you would like to try on your computer:
 | [<img src="depth_estimation/zoe_depth/output_k.png" width=256px>](depth_estimation/zoe_depth/) |[zoe_depth](depth_estimation/zoe_depth)| [ZoeDepth](https://github.com/isl-org/ZoeDepth) | Pytorch | 1.3.0 and later |
 | [<img src="depth_estimation/depth_anything/output.png" width=256px>](depth_estimation/depth_anything/) |[DepthAnything](depth_estimation/depth_anything)| [DepthAnything](https://github.com/LiheYoung/Depth-Anything) | Pytorch | 1.2.9 and later |
 | [<img src="depth_estimation/depth_anything_v2/output.png" width=256px>](depth_estimation/depth_anything_v2/) |[DepthAnythingV2](depth_estimation/depth_anything_v2)| [Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2) | Pytorch | 1.2.16 and later |
+| [<img src="depth_estimation/depth_pro/output.png" width=256px>](depth_estimation/depth_pro/) |[DepthPro](depth_estimation/depth_pro)| [Depth Pro: Sharp Monocular Metric Depth in Less Than a Second](https://github.com/apple/ml-depth-pro) | Pytorch | 1.2.16 and later |
 
 ## Diffusion
 
