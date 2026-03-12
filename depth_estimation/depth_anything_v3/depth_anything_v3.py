@@ -114,6 +114,11 @@ def post_process(depth, h, w):
     elif depth.ndim == 3:
         depth = depth[0]
     depth = cv2.resize(depth, dsize=(w, h), interpolation=cv2.INTER_LINEAR)
+    # DA3 outputs metric depth (larger = farther).
+    # Convert to inverse depth for visualization so that closer objects
+    # appear brighter (matching DA3 official visualize_depth()).
+    valid = depth > 0
+    depth[valid] = 1.0 / depth[valid]
     depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
     if not args.grey:
         depth = depth.astype(np.uint8)
