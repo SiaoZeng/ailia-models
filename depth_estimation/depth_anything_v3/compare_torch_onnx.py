@@ -48,6 +48,11 @@ def nearest_multiple(x, p):
 
 
 def preprocess(image):
+    """Preprocess matching DA3 original: resize uint8, then convert to float."""
+    # Convert to uint8 for resizing (matches DA3 PIL-based pipeline)
+    if image.dtype != np.uint8:
+        image = np.clip(image * 255.0, 0, 255).astype(np.uint8)
+
     h, w = image.shape[:2]
     longest = max(w, h)
     scale = PROCESS_RES / float(longest)
@@ -63,10 +68,12 @@ def preprocess(image):
         interp2 = cv2.INTER_CUBIC if upscale else cv2.INTER_AREA
         image = cv2.resize(image, (final_w, final_h), interpolation=interp2)
 
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
+    # Convert to float and normalize (matches T.ToTensor() + T.Normalize())
+    image = image.astype(np.float32) / 255.0
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
     image = (image - mean) / std
-    image = image.transpose(2, 0, 1).astype(np.float32)
+    image = image.transpose(2, 0, 1)
     return image
 
 
