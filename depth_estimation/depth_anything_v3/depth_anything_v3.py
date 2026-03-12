@@ -74,17 +74,10 @@ def nearest_multiple(x, p):
 def preprocess(image):
     """Preprocess image following official DA3 InputProcessor.
 
-    1. Convert to uint8 RGB and resize longest side to PROCESS_RES
+    1. Resize longest side to PROCESS_RES
     2. Round each dimension to nearest multiple of PATCH_SIZE
-    3. Convert to float and normalize with ImageNet mean/std
-
-    Note: resizing must be done on uint8 data (before /255.0 conversion)
-    to match the original DA3 pipeline which uses PIL + cv2 on uint8 arrays.
+    3. Normalize with ImageNet mean/std
     """
-    # Convert to uint8 for resizing (matches DA3 PIL-based pipeline)
-    if image.dtype != np.uint8:
-        image = np.clip(image * 255.0, 0, 255).astype(np.uint8)
-
     h, w = image.shape[:2]
     longest = max(w, h)
     scale = PROCESS_RES / float(longest)
@@ -100,12 +93,11 @@ def preprocess(image):
         interp2 = cv2.INTER_CUBIC if upscale else cv2.INTER_AREA
         image = cv2.resize(image, (final_w, final_h), interpolation=interp2)
 
-    # Convert to float and normalize (matches T.ToTensor() + T.Normalize())
-    image = image.astype(np.float32) / 255.0
-    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    # Normalize
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
     image = (image - mean) / std
-    image = image.transpose(2, 0, 1)
+    image = image.transpose(2, 0, 1).astype(np.float32)
     return image
 
 
