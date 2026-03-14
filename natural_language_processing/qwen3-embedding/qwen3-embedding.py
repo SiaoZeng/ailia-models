@@ -1,0 +1,204 @@
+import os
+import sys
+import time
+from logging import getLogger
+
+import ailia
+import numpy as np
+from transformers import AutoTokenizer
+
+# import original modules
+sys.path.append("../../util")
+from arg_utils import get_base_parser, update_parser  # noqa
+from model_utils import check_and_download_models  # noqa
+
+logger = getLogger(__name__)
+
+# ======================
+# Parameters
+# ======================
+
+WEIGHT_PATH = "Qwen3-Embedding-0.6B.onnx"
+MODEL_PATH = "Qwen3-Embedding-0.6B.onnx.prototxt"
+REMOTE_PATH = "https://storage.googleapis.com/ailia-models/qwen3-embedding/"
+
+QUERY_DEFAULT = "What is the capital of China?"
+DOCUMENT_PATH = "documents.txt"
+TASK_DEFAULT = (
+    "Given a web search query, retrieve relevant passages that answer the query"
+)
+
+# ======================
+# Argument Parser Config
+# ======================
+
+parser = get_base_parser("Qwen3-Embedding", QUERY_DEFAULT, None, fp16_support=False)
+parser.add_argument(
+    "-d",
+    "--document",
+    action="append",
+    nargs="+",
+    default=None,
+    help=(
+        "Documents to search. Repeatable or space-separated. "
+        "If a single filename is given and the file exists, reads documents from it."
+    ),
+)
+parser.add_argument(
+    "-t",
+    "--task",
+    metavar="TASK",
+    default=TASK_DEFAULT,
+    help="Task description for query instruction.",
+)
+parser.add_argument("--onnx", action="store_true", help="execute onnxruntime version.")
+args = update_parser(parser, check_input_type=False)
+
+
+# ======================
+# Secondary Functions
+# ======================
+
+
+def get_query_text(task, query):
+    return f"Instruct: {task}\nQuery:{query}"
+
+
+# ======================
+# Main functions
+# ======================
+
+
+def predict(models, texts):
+    tokenizer = models["tokenizer"]
+    batch_dict = tokenizer(
+        texts, max_length=8192, padding=True, truncation=True, return_tensors="np"
+    )
+
+    input_ids = batch_dict["input_ids"].astype(np.int64)
+    attention_mask = batch_dict["attention_mask"].astype(np.int64)
+
+    net = models["net"]
+
+    # feedforward
+    if not args.onnx:
+        output = net.predict([input_ids, attention_mask])
+    else:
+        output = net.run(
+            None,
+            {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+            },
+        )
+    embeddings = output[0]
+
+    return embeddings
+
+
+def recognize_from_sentence(models):
+    task = args.task
+
+    # Build documents
+    if args.document is None:
+        document_args = [DOCUMENT_PATH]
+    else:
+        document_args = [d for group in args.document for d in group]
+    if len(document_args) == 1 and os.path.isfile(document_args[0]):
+        with open(document_args[0], encoding="utf-8") as f:
+            documents = [line.strip() for line in f if line.strip()]
+    else:
+        documents = document_args
+
+    # Build queries
+    single_query = isinstance(args.input, str)
+    if single_query:
+        queries = [args.input]
+        logger.info("query: " + args.input)
+    else:
+        queries = args.input
+
+    query_texts = [get_query_text(task, q) for q in queries]
+
+    # inference
+    logger.info("Generating embeddings...")
+    if args.benchmark:
+        logger.info("BENCHMARK mode")
+        total_time = 0
+        for _ in range(args.benchmark_count):
+            start = int(round(time.time() * 1000))
+            all_embs = predict(models, query_texts + documents)
+            end = int(round(time.time() * 1000))
+            logger.info(f"\tailia processing time {end - start} ms")
+            if _ != 0:
+                total_time += end - start
+        logger.info(f"average time {total_time / (args.benchmark_count - 1)} ms\n")
+        return
+    else:
+        all_embs = predict(models, query_texts + documents)
+
+    query_embs = all_embs[: len(queries)]
+    doc_embs = all_embs[len(queries) :]
+
+    # compute cosine similarity (embeddings are already L2-normalized by the model)
+    scores = query_embs @ doc_embs.T  # (num_queries, num_docs)
+
+    logger.info("The documents in order of similarity are below.")
+    if single_query:
+        comb_score = sorted(zip(enumerate(documents), scores[0]), key=lambda x: -x[1])
+        logger.info(
+            "\n".join(
+                f"\n[{i + 1}] ({score:.3f})\n- {doc}" for (i, doc), score in comb_score
+            )
+        )
+    else:
+        # all combinations of queries × documents, sorted by score
+        all_pairs = [
+            (qi, di, queries[qi], documents[di], scores[qi, di])
+            for qi in range(len(queries))
+            for di in range(len(documents))
+        ]
+        comb_score = sorted(all_pairs, key=lambda x: -x[4])
+        logger.info(
+            "\n".join(
+                f"\n[{qi + 1}-{di + 1}] ({sim:.3f})\n- {q}\n- {doc}"
+                for qi, di, q, doc, sim in comb_score
+            )
+        )
+
+    logger.info("Script finished successfully.")
+
+
+def main():
+    # model files check and download
+    check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
+
+    env_id = args.env_id
+
+    # initialize
+    if not args.onnx:
+        memory_mode = ailia.get_memory_mode(True, True, False, True)
+        net = ailia.Net(MODEL_PATH, WEIGHT_PATH, env_id=env_id, memory_mode=memory_mode)
+    else:
+        import onnxruntime
+
+        cuda = 0 < ailia.get_gpu_environment_id()
+        providers = (
+            ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            if cuda
+            else ["CPUExecutionProvider"]
+        )
+        net = onnxruntime.InferenceSession(WEIGHT_PATH, providers=providers)
+
+    tokenizer = AutoTokenizer.from_pretrained("tokenizer", padding_side="left")
+
+    models = {
+        "net": net,
+        "tokenizer": tokenizer,
+    }
+
+    recognize_from_sentence(models)
+
+
+if __name__ == "__main__":
+    main()
