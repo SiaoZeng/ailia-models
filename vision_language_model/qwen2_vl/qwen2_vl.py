@@ -80,6 +80,13 @@ parser.add_argument(
     "--fp16", action="store_true", help="use fp16 model (default : fp32 model)."
 )
 parser.add_argument(
+    "--model_type",
+    type=str,
+    default=None,
+    choices=["fp32", "fp16", "int4"],
+    help="model type (fp32, fp16, int4). overrides --fp16 option.",
+)
+parser.add_argument(
     "--temperature",
     type=float,
     default=0.01,
@@ -114,24 +121,42 @@ args = update_parser(parser)
 # Model selection
 # ======================
 
+MODEL_TYPE = "fp32"
+if args.model_type is not None:
+    MODEL_TYPE = args.model_type
+elif args.fp16:
+    MODEL_TYPE = "fp16"
+
 FP16 = ""
-if args.fp16:
+if MODEL_TYPE == "fp16":
     FP16 = "_fp16"
+
+INT4 = ""
+if MODEL_TYPE == "int4":
+    INT4 = "_int4"
 
 OPT = ".opt"
 if args.normal:
     OPT = ""
 
-WEIGHT_PATH = "Qwen2-VL-2B" + FP16 + ".onnx"
-WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx"
-MODEL_PATH = "Qwen2-VL-2B" + FP16 + ".onnx.prototxt"
-MODEL_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx.prototxt"
-if args.fp16:
-    PB_PATH = "Qwen2-VL-2B_weights_fp16.pb"
+if MODEL_TYPE == "int4":
+    WEIGHT_PATH = "Qwen2-VL-2B_int4.onnx"
+    WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis_fp16" + OPT + ".onnx"
+    MODEL_PATH = "Qwen2-VL-2B_int4.onnx.prototxt"
+    MODEL_VIS_PATH = "Qwen2-VL-2B_vis_fp16" + OPT + ".onnx.prototxt"
+    PB_PATH = None
     PB_VIS_PATH = None
 else:
-    PB_PATH = "Qwen2-VL-2B_weights.pb"
-    PB_VIS_PATH = "Qwen2-VL-2B_vis_weights.pb"
+    WEIGHT_PATH = "Qwen2-VL-2B" + FP16 + ".onnx"
+    WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx"
+    MODEL_PATH = "Qwen2-VL-2B" + FP16 + ".onnx.prototxt"
+    MODEL_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx.prototxt"
+    if MODEL_TYPE == "fp16":
+        PB_PATH = "Qwen2-VL-2B_weights_fp16.pb"
+        PB_VIS_PATH = None
+    else:
+        PB_PATH = "Qwen2-VL-2B_weights.pb"
+        PB_VIS_PATH = "Qwen2-VL-2B_vis_weights.pb"
 
 
 # ======================
