@@ -131,21 +131,17 @@ FP16 = ""
 if MODEL_TYPE == "fp16":
     FP16 = "_fp16"
 
-INT4 = ""
-if MODEL_TYPE == "int4":
-    INT4 = "_int4"
-
 OPT = ".opt"
 if args.normal:
     OPT = ""
 
 if MODEL_TYPE == "int4":
     WEIGHT_PATH = "Qwen2-VL-2B_int4.onnx"
-    WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis_fp16" + OPT + ".onnx"
+    WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis.onnx"
     MODEL_PATH = "Qwen2-VL-2B_int4.onnx.prototxt"
-    MODEL_VIS_PATH = "Qwen2-VL-2B_vis_fp16" + OPT + ".onnx.prototxt"
-    PB_PATH = None
-    PB_VIS_PATH = None
+    MODEL_VIS_PATH = "Qwen2-VL-2B_vis.onnx.prototxt"
+    PB_PATH = "Qwen2-VL-2B_int4_weights.pb"
+    PB_VIS_PATH = "Qwen2-VL-2B_vis_weights.pb"
 else:
     WEIGHT_PATH = "Qwen2-VL-2B" + FP16 + ".onnx"
     WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx"
@@ -930,7 +926,15 @@ def main():
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 
         visual = onnxruntime.InferenceSession(WEIGHT_VIS_PATH, providers=providers)
-        net = onnxruntime.InferenceSession(WEIGHT_PATH, providers=providers)
+
+        sess_options = onnxruntime.SessionOptions()
+        if MODEL_TYPE == "int4":
+            sess_options.graph_optimization_level = (
+                onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+            )
+        net = onnxruntime.InferenceSession(
+            WEIGHT_PATH, sess_options=sess_options, providers=providers
+        )
 
     #args.disable_ailia_tokenizer = True
     if args.disable_ailia_tokenizer:
