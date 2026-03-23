@@ -1,8 +1,12 @@
 """
-Export Qwen2-VL-2B int4 quantized ONNX model using Olive / onnxruntime quantization.
+Export Qwen2-VL-2B int4 quantized ONNX model using onnxruntime quantization.
+
+Tested versions:
+    onnxruntime 1.24.4
+    onnx 1.20.1
 
 Requirements:
-    pip install olive-ai onnxruntime onnx numpy
+    pip install onnxruntime onnx numpy
 
 Usage:
     python export_olive_int4.py
@@ -13,13 +17,14 @@ quantization). The vision encoder is kept at fp32 precision.
 
 The quantization uses onnxruntime's MatMulNBitsQuantizer which is the same
 engine used by Microsoft Olive for int4 weight quantization.
+The quantized model uses the com.microsoft:MatMulNBits operator.
 
 Steps:
   1. Download the fp16 ONNX model from ailia-models storage
   2. Convert fp16 -> fp32 for quantization compatibility
   3. Quantize all MatMul weights to int4 (block_size=128, symmetric)
   4. Fix any remaining fp16 type references
-  5. Save the quantized model with external data format
+  5. Save the quantized model as a single ONNX file
   6. Generate prototxt
 """
 
@@ -101,14 +106,7 @@ def quantize_int4(model, output_model_path):
     quant.process()
 
     print(f"  Saving quantized model: {output_model_path}")
-    onnx.save_model(
-        quant.model.model,
-        output_model_path,
-        save_as_external_data=True,
-        all_tensors_to_one_file=True,
-        location=os.path.basename(output_model_path).replace(".onnx", "_weights.pb"),
-        size_threshold=1024,
-    )
+    onnx.save(quant.model.model, output_model_path)
 
 
 def generate_prototxt(onnx_path):
@@ -167,9 +165,6 @@ def main():
 
     print("\nDone! Generated files:")
     print(f"  - {quantized_model}")
-    weights_path = quantized_model.replace(".onnx", "_weights.pb")
-    if os.path.exists(weights_path):
-        print(f"  - {weights_path}")
     print(f"  - {prototxt_path}")
     print("\nNote: The vision encoder uses fp32 model (Qwen2-VL-2B_vis.onnx).")
     print(

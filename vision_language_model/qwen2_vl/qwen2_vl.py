@@ -140,7 +140,7 @@ if MODEL_TYPE == "int4":
     WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis.onnx"
     MODEL_PATH = "Qwen2-VL-2B_int4.onnx.prototxt"
     MODEL_VIS_PATH = "Qwen2-VL-2B_vis.onnx.prototxt"
-    PB_PATH = "Qwen2-VL-2B_int4_weights.pb"
+    PB_PATH = None
     PB_VIS_PATH = "Qwen2-VL-2B_vis_weights.pb"
 else:
     WEIGHT_PATH = "Qwen2-VL-2B" + FP16 + ".onnx"
