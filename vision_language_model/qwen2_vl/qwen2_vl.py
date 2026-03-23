@@ -77,14 +77,11 @@ parser.add_argument(
     "--disable_ailia_tokenizer", action="store_true", help="disable ailia tokenizer."
 )
 parser.add_argument(
-    "--fp16", action="store_true", help="use fp16 model (default : fp32 model)."
-)
-parser.add_argument(
     "--model_type",
     type=str,
     default=None,
-    choices=["fp32", "fp16", "int4"],
-    help="model type (fp32, fp16, int4). overrides --fp16 option.",
+    choices=["fp32", "fp16", "2B-int4", "7B-int4"],
+    help="model type (fp32, fp16, 2B-int4, 7B-int4).",
 )
 parser.add_argument(
     "--temperature",
@@ -124,8 +121,6 @@ args = update_parser(parser)
 MODEL_TYPE = "fp32"
 if args.model_type is not None:
     MODEL_TYPE = args.model_type
-elif args.fp16:
-    MODEL_TYPE = "fp16"
 
 FP16 = ""
 if MODEL_TYPE == "fp16":
@@ -135,13 +130,20 @@ OPT = ".opt"
 if args.normal:
     OPT = ""
 
-if MODEL_TYPE == "int4":
+if MODEL_TYPE == "2B-int4":
     WEIGHT_PATH = "Qwen2-VL-2B_int4.onnx"
     WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis.onnx"
     MODEL_PATH = "Qwen2-VL-2B_int4.onnx.prototxt"
     MODEL_VIS_PATH = "Qwen2-VL-2B_vis.onnx.prototxt"
-    PB_PATH = None
+    PB_PATH = "Qwen2-VL-2B_int4_weights.pb"
     PB_VIS_PATH = "Qwen2-VL-2B_vis_weights.pb"
+elif MODEL_TYPE == "7B-int4":
+    WEIGHT_PATH = "Qwen2-VL-7B_int4.onnx"
+    WEIGHT_VIS_PATH = "Qwen2-VL-7B_vis.onnx"
+    MODEL_PATH = "Qwen2-VL-7B_int4.onnx.prototxt"
+    MODEL_VIS_PATH = "Qwen2-VL-7B_vis.onnx.prototxt"
+    PB_PATH = "Qwen2-VL-7B_int4_weights.pb"
+    PB_VIS_PATH = "Qwen2-VL-7B_vis_weights.pb"
 else:
     WEIGHT_PATH = "Qwen2-VL-2B" + FP16 + ".onnx"
     WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx"
@@ -928,7 +930,7 @@ def main():
         visual = onnxruntime.InferenceSession(WEIGHT_VIS_PATH, providers=providers)
 
         sess_options = onnxruntime.SessionOptions()
-        if MODEL_TYPE == "int4":
+        if MODEL_TYPE in ("2B-int4", "7B-int4"):
             sess_options.graph_optimization_level = (
                 onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
             )
