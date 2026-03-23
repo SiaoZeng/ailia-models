@@ -143,8 +143,8 @@ def main():
 
     # Step 1: Download original fp16 ONNX model
     print("[1/4] Downloading original fp16 model ...")
-    original_model = "Qwen2-VL-2B_fp16.onnx"
-    original_pb = "Qwen2-VL-2B_weights_fp16.pb"
+    original_model = "Qwen2-VL-2B.opt.onnx"
+    original_pb = "Qwen2-VL-2B_weights.pb"
     download_model(original_model, remote_path)
     download_model(original_pb, remote_path)
 
