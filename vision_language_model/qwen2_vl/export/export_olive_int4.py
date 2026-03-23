@@ -20,12 +20,10 @@ engine used by Microsoft Olive for int4 weight quantization.
 The quantized model uses the com.microsoft:MatMulNBits operator.
 
 Steps:
-  1. Download the fp16 ONNX model from ailia-models storage
-  2. Convert fp16 -> fp32 for quantization compatibility
-  3. Quantize all MatMul weights to int4 (block_size=128, symmetric)
-  4. Fix any remaining fp16 type references
-  5. Save the quantized model as a single ONNX file
-  6. Generate prototxt
+  1. Download the fp32 ONNX model from ailia-models storage
+  2. Quantize all MatMul weights to int4 (block_size=128, symmetric)
+  3. Save the quantized model as a single ONNX file
+  4. Generate prototxt
 """
 
 import os
@@ -33,9 +31,6 @@ import sys
 import argparse
 import subprocess
 
-import numpy as np
-import onnx
-from onnx import TensorProto, numpy_helper
 from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
 from onnxruntime.quantization.quant_utils import QuantFormat
 
@@ -50,52 +45,13 @@ def download_model(model_name, remote_path):
     subprocess.check_call(["wget", "-q", url, "-O", model_name])
 
 
-def convert_fp16_to_fp32(model):
-    """Convert all fp16 elements in the model to fp32."""
-    # Convert initializers
-    for init in model.graph.initializer:
-        if init.data_type == TensorProto.FLOAT16:
-            arr = numpy_helper.to_array(init).astype(np.float32)
-            new_t = numpy_helper.from_array(arr, init.name)
-            init.CopyFrom(new_t)
-
-    # Convert graph inputs, outputs, and value_info
-    for vi in (
-        list(model.graph.input)
-        + list(model.graph.output)
-        + list(model.graph.value_info)
-    ):
-        if (
-            vi.type.HasField("tensor_type")
-            and vi.type.tensor_type.elem_type == TensorProto.FLOAT16
-        ):
-            vi.type.tensor_type.elem_type = TensorProto.FLOAT
-
-    # Convert Cast and Constant nodes
-    for node in model.graph.node:
-        if node.op_type == "Cast":
-            for attr in node.attribute:
-                if attr.name == "to" and attr.i == TensorProto.FLOAT16:
-                    attr.i = TensorProto.FLOAT
-        if node.op_type == "Constant":
-            for attr in node.attribute:
-                if attr.name == "value" and attr.t.data_type == TensorProto.FLOAT16:
-                    arr = numpy_helper.to_array(attr.t).astype(np.float32)
-                    new_t = numpy_helper.from_array(arr)
-                    attr.t.CopyFrom(new_t)
-        if node.op_type == "ConstantOfShape":
-            for attr in node.attribute:
-                if attr.name == "value" and attr.t.data_type == TensorProto.FLOAT16:
-                    arr = numpy_helper.to_array(attr.t).astype(np.float32)
-                    new_t = numpy_helper.from_array(arr)
-                    attr.t.CopyFrom(new_t)
-
-
-def quantize_int4(model, output_model_path):
+def quantize_int4(input_model_path, output_model_path):
     """Quantize ONNX model to int4 using MatMulNBitsQuantizer."""
+    import onnx
+
     print("  Quantizing to int4 (block_size=128, symmetric) ...")
     quant = MatMulNBitsQuantizer(
-        model=model,
+        model=input_model_path,
         bits=4,
         block_size=128,
         is_symmetric=True,
@@ -126,7 +82,7 @@ def generate_prototxt(onnx_path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export Qwen2-VL-2B int4 quantized model using Olive/onnxruntime"
+        description="Export Qwen2-VL-2B int4 quantized model using onnxruntime"
     )
     parser.add_argument(
         "--output_dir",
@@ -141,26 +97,20 @@ def main():
     os.makedirs(work_dir, exist_ok=True)
     os.chdir(work_dir)
 
-    # Step 1: Download original fp16 ONNX model
-    print("[1/4] Downloading original fp16 model ...")
-    original_model = "Qwen2-VL-2B.opt.onnx"
+    # Step 1: Download original fp32 ONNX model
+    print("[1/3] Downloading original fp32 model ...")
+    original_model = "Qwen2-VL-2B.onnx"
     original_pb = "Qwen2-VL-2B_weights.pb"
     download_model(original_model, remote_path)
     download_model(original_pb, remote_path)
 
-    # Step 2: Load and convert fp16 -> fp32
-    print("[2/4] Loading and converting fp16 -> fp32 ...")
-    model = onnx.load(original_model, load_external_data=True)
-    convert_fp16_to_fp32(model)
-
-    # Step 3: Quantize LLM decoder to int4
-    print("[3/4] Quantizing LLM decoder to int4 ...")
+    # Step 2: Quantize LLM decoder to int4
+    print("[2/3] Quantizing LLM decoder to int4 ...")
     quantized_model = os.path.join(work_dir, "Qwen2-VL-2B_int4.onnx")
-    quantize_int4(model, quantized_model)
-    del model
+    quantize_int4(original_model, quantized_model)
 
-    # Step 4: Generate prototxt
-    print("[4/4] Generating prototxt ...")
+    # Step 3: Generate prototxt
+    print("[3/3] Generating prototxt ...")
     prototxt_path = generate_prototxt(quantized_model)
 
     print("\nDone! Generated files:")
