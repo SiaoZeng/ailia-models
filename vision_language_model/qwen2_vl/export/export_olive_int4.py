@@ -106,15 +106,7 @@ def quantize_int4(model, output_model_path):
     quant.process()
 
     print(f"  Saving quantized model: {output_model_path}")
-    pb_name = os.path.basename(output_model_path).replace(".onnx", "_weights.pb")
-    onnx.save_model(
-        quant.model.model,
-        output_model_path,
-        save_as_external_data=True,
-        all_tensors_to_one_file=True,
-        location=pb_name,
-        size_threshold=1024,
-    )
+    onnx.save(quant.model.model, output_model_path)
 
 
 def generate_prototxt(onnx_path):
@@ -159,11 +151,6 @@ def main():
     # Step 2: Load and convert fp16 -> fp32
     print("[2/4] Loading and converting fp16 -> fp32 ...")
     model = onnx.load(original_model, load_external_data=True)
-    # Remove source files to free disk space (data is now in memory)
-    if os.path.exists(original_model):
-        os.remove(original_model)
-    if os.path.exists(original_pb):
-        os.remove(original_pb)
     convert_fp16_to_fp32(model)
 
     # Step 3: Quantize LLM decoder to int4
