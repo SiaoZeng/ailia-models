@@ -47,10 +47,20 @@ By adding the `--video` option, you can input the video.
 $ python3 qwen2_vl.py --video VIDEO_PATH --prompt "Describe this video."
 ```
 
-If you want to specify the prompt, put the prompt after the `--prompt` option.  
+If you want to specify the prompt, put the prompt after the `--prompt` option.
 ```bash
 $ python3 qwen2_vl.py --prompt PROMPT
 ```
+
+By adding the `--model_type` option, you can select the model precision.
+```bash
+$ python3 qwen2_vl.py --model_type fp32
+$ python3 qwen2_vl.py --model_type fp16
+$ python3 qwen2_vl.py --model_type int4
+```
+
+The int4 model is quantized using [Microsoft Olive](https://github.com/microsoft/Olive).
+The export script is located in `export/export_olive_int4.py`.
 
 ## Reference
 
@@ -66,5 +76,6 @@ ONNX opset=17
 
 ## Netron
 
-[Qwen2-VL-2B_vis.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/qwen2_vl/Qwen2-VL-2B_vis.onnx.prototxt)  
-[Qwen2-VL-2B.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/qwen2_vl/Qwen2-VL-2B.onnx.prototxt)  
+[Qwen2-VL-2B_vis.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/qwen2_vl/Qwen2-VL-2B_vis.onnx.prototxt)
+[Qwen2-VL-2B.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/qwen2_vl/Qwen2-VL-2B.onnx.prototxt)
+[Qwen2-VL-2B_int4.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/qwen2_vl/Qwen2-VL-2B_int4.onnx.prototxt)

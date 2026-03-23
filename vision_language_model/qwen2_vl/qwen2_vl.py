@@ -77,7 +77,11 @@ parser.add_argument(
     "--disable_ailia_tokenizer", action="store_true", help="disable ailia tokenizer."
 )
 parser.add_argument(
-    "--fp16", action="store_true", help="use fp16 model (default : fp32 model)."
+    "--model_type",
+    type=str,
+    default=None,
+    choices=["fp32", "fp16", "int4"],
+    help="model type (fp32, fp16, int4).",
 )
 parser.add_argument(
     "--temperature",
@@ -114,24 +118,36 @@ args = update_parser(parser)
 # Model selection
 # ======================
 
+MODEL_TYPE = "fp32"
+if args.model_type is not None:
+    MODEL_TYPE = args.model_type
+
 FP16 = ""
-if args.fp16:
+if MODEL_TYPE == "fp16":
     FP16 = "_fp16"
 
 OPT = ".opt"
 if args.normal:
     OPT = ""
 
-WEIGHT_PATH = "Qwen2-VL-2B" + FP16 + ".onnx"
-WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx"
-MODEL_PATH = "Qwen2-VL-2B" + FP16 + ".onnx.prototxt"
-MODEL_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx.prototxt"
-if args.fp16:
-    PB_PATH = "Qwen2-VL-2B_weights_fp16.pb"
-    PB_VIS_PATH = None
-else:
-    PB_PATH = "Qwen2-VL-2B_weights.pb"
+if MODEL_TYPE == "int4":
+    WEIGHT_PATH = "Qwen2-VL-2B_int4.onnx"
+    WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis.onnx"
+    MODEL_PATH = "Qwen2-VL-2B_int4.onnx.prototxt"
+    MODEL_VIS_PATH = "Qwen2-VL-2B_vis.onnx.prototxt"
+    PB_PATH = None
     PB_VIS_PATH = "Qwen2-VL-2B_vis_weights.pb"
+else:
+    WEIGHT_PATH = "Qwen2-VL-2B" + FP16 + ".onnx"
+    WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx"
+    MODEL_PATH = "Qwen2-VL-2B" + FP16 + ".onnx.prototxt"
+    MODEL_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx.prototxt"
+    if MODEL_TYPE == "fp16":
+        PB_PATH = "Qwen2-VL-2B_weights_fp16.pb"
+        PB_VIS_PATH = None
+    else:
+        PB_PATH = "Qwen2-VL-2B_weights.pb"
+        PB_VIS_PATH = "Qwen2-VL-2B_vis_weights.pb"
 
 
 # ======================
@@ -905,7 +921,15 @@ def main():
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 
         visual = onnxruntime.InferenceSession(WEIGHT_VIS_PATH, providers=providers)
-        net = onnxruntime.InferenceSession(WEIGHT_PATH, providers=providers)
+
+        sess_options = onnxruntime.SessionOptions()
+        if MODEL_TYPE == "int4":
+            sess_options.graph_optimization_level = (
+                onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+            )
+        net = onnxruntime.InferenceSession(
+            WEIGHT_PATH, sess_options=sess_options, providers=providers
+        )
 
     #args.disable_ailia_tokenizer = True
     if args.disable_ailia_tokenizer:
