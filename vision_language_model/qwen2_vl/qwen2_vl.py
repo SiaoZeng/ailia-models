@@ -132,11 +132,11 @@ if args.normal:
 
 if MODEL_TYPE == "int4":
     WEIGHT_PATH = "Qwen2-VL-2B_int4.onnx"
-    WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis.onnx"
+    WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis_int4.onnx"
     MODEL_PATH = "Qwen2-VL-2B_int4.onnx.prototxt"
-    MODEL_VIS_PATH = "Qwen2-VL-2B_vis.onnx.prototxt"
+    MODEL_VIS_PATH = "Qwen2-VL-2B_vis_int4.onnx.prototxt"
     PB_PATH = None
-    PB_VIS_PATH = "Qwen2-VL-2B_vis_weights.pb"
+    PB_VIS_PATH = "Qwen2-VL-2B_vis_int4_weights.pb"
 else:
     WEIGHT_PATH = "Qwen2-VL-2B" + FP16 + ".onnx"
     WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx"
