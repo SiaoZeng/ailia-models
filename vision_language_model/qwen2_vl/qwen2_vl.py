@@ -722,7 +722,7 @@ def sample(
         if this_peer_finished:
             break
 
-        if INTERMEDIATE:
+        if INTERMEDIATE and not args.benchmark:
             output_text = tokenizer_decode(initial_ids, input_ids, tokenizer, True)[0]
             if output_text.startswith(before_text):
                 deltaText = output_text[len(before_text):]
@@ -867,25 +867,15 @@ def recognize(models):
     logger.info("Start inference...")
     if args.benchmark:
         logger.info("BENCHMARK mode")
-        total_time_estimation = 0
-        for i in range(args.benchmark_count):
-            start = int(round(time.time() * 1000))
-            output_text = predict(models, messages)
-            end = int(round(time.time() * 1000))
-            estimation_time = end - start
-
-            # Logging
-            logger.info(f"\tailia processing estimation time {estimation_time} ms")
-            if i != 0:
-                total_time_estimation = total_time_estimation + estimation_time
-
-        logger.info(
-            f"\taverage time estimation {total_time_estimation / (args.benchmark_count - 1)} ms"
-        )
+        start = int(round(time.time() * 1000))
+        output_text = predict(models, messages)
+        end = int(round(time.time() * 1000))
+        estimation_time = end - start
+        logger.info(f"\tailia processing estimation time {estimation_time} ms")
     else:
         output_text = predict(models, messages)
 
-    if INTERMEDIATE:
+    if INTERMEDIATE and not args.benchmark:
         print("")
     else:
         print(output_text)
