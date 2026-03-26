@@ -59,8 +59,8 @@ $ python3 qwen2_vl.py --model_type fp16
 $ python3 qwen2_vl.py --model_type int4
 ```
 
-The int4 model is quantized using [Microsoft Olive](https://github.com/microsoft/Olive).
-The export script is located in `export/export_olive_int4.py`.
+The int4 model is quantized using onnxruntime's MatMulNBitsQuantizer.
+The export scripts are located in `export/export_decoder_int4.py` and `export/export_encoder_int4.py`.
 
 ## Reference
 

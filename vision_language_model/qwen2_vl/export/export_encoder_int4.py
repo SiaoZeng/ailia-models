@@ -28,7 +28,6 @@ import subprocess
 
 import onnx
 from onnx import numpy_helper
-from onnx.external_data_helper import convert_model_to_external_data
 from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
 from onnxruntime.quantization.quant_utils import QuantFormat
 
@@ -173,7 +172,6 @@ def main():
     # Step 2: Convert Gemm to MatMul+Add and quantize to int4
     print("[2/3] Quantizing vision encoder to int4 ...")
     quantized_vis_model = os.path.join(work_dir, "Qwen2-VL-2B_vis_int4.onnx")
-    quantized_vis_pb = os.path.join(work_dir, "Qwen2-VL-2B_vis_int4_weights.pb")
 
     print("  Loading vision encoder model...")
     model = onnx.load(original_vis_model)
@@ -198,12 +196,6 @@ def main():
     print(f"  MatMulNBits nodes created: {nbits_count}")
 
     print(f"  Saving quantized model: {quantized_vis_model}")
-    convert_model_to_external_data(
-        result,
-        all_tensors_to_one_file=True,
-        location=os.path.basename(quantized_vis_pb),
-        size_threshold=0,
-    )
     onnx.save(result, quantized_vis_model)
 
     # Step 3: Generate prototxt
@@ -212,7 +204,6 @@ def main():
 
     print("\nDone! Generated files:")
     print(f"  - {quantized_vis_model}")
-    print(f"  - {quantized_vis_pb}")
     print(f"  - {vis_prototxt_path}")
 
 
