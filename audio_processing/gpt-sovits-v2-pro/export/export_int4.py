@@ -14,13 +14,13 @@ Usage:
 
 This script quantizes the following GPT-SoVITS v2-Pro models to int4:
   - cnhubert (SSL feature extractor): 360MB -> 78MB
+  - t2s_encoder (T2S encoder): 11MB -> 10MB
   - t2s_fsdec (T2S first-stage decoder): 293MB -> 42MB
   - t2s_sdec (T2S stage decoder): 293MB -> 41MB
 
 Models not quantized (Conv-dominant, minimal benefit):
   - vits.onnx (vocoder, 251MB, mostly Conv)
   - sv.onnx (speaker verification, 174MB, all Conv)
-  - t2s_encoder.onnx (11MB, too small)
 
 The quantization uses onnxruntime's MatMulNBitsQuantizer.
 For t2s_fsdec and t2s_sdec, Gemm nodes are first converted to MatMul+Add.
@@ -171,6 +171,7 @@ def main():
 
     models = [
         ("cnhubert.onnx", "cnhubert_int4.onnx", False),
+        ("t2s_encoder.onnx", "t2s_encoder_int4.onnx", False),
         ("t2s_fsdec.onnx", "t2s_fsdec_int4.onnx", True),
         ("t2s_sdec.opt.onnx", "t2s_sdec_int4.onnx", True),
     ]
