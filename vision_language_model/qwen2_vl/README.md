@@ -52,11 +52,14 @@ If you want to specify the prompt, put the prompt after the `--prompt` option.
 $ python3 qwen2_vl.py --prompt PROMPT
 ```
 
-By adding the `--model_type` option, you can select the model precision.
+By adding the `--fp16` option, you can use the fp16 model.
 ```bash
-$ python3 qwen2_vl.py --model_type fp32
-$ python3 qwen2_vl.py --model_type fp16
-$ python3 qwen2_vl.py --model_type int4
+$ python3 qwen2_vl.py --fp16
+```
+
+By adding the `--quantize` option, you can use quantized models.
+```bash
+$ python3 qwen2_vl.py --quantize int4
 ```
 
 The int4 model is quantized using onnxruntime's MatMulNBitsQuantizer.
