@@ -13,16 +13,16 @@ Usage:
     python export_int8.py --output_dir /path/to/output
 
 This script quantizes the following GPT-SoVITS v2-Pro models to int8:
-  - cnhubert (SSL feature extractor): 360MB -> 91MB
-  - t2s_encoder (T2S encoder): 11MB -> 3MB
-  - t2s_fsdec (T2S first-stage decoder): 293MB -> 75MB
-  - t2s_sdec (T2S stage decoder): 293MB -> 74MB
+  - cnhubert (SSL feature extractor): 360MB -> 119MB
+  - t2s_fsdec (T2S first-stage decoder): 293MB -> 78MB
+  - t2s_sdec (T2S stage decoder): 293MB -> 78MB
 
-Models not quantized (Conv-dominant, minimal benefit):
+Models not quantized:
+  - t2s_encoder.onnx (11MB, mostly Embedding/Conv, only 2 MatMul nodes)
   - vits.onnx (vocoder, 251MB, mostly Conv)
   - sv.onnx (speaker verification, 174MB, all Conv)
 
-The quantization uses onnxruntime's dynamic quantization (QInt8).
+The quantization uses onnxruntime's MatMulNBitsQuantizer (8-bit).
 For t2s_fsdec and t2s_sdec, Gemm nodes are first converted to MatMul+Add.
 """
 
@@ -33,7 +33,8 @@ import subprocess
 
 import onnx
 from onnx import numpy_helper, helper, TensorProto
-from onnxruntime.quantization import quantize_dynamic, QuantType
+from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+from onnxruntime.quantization.quant_utils import QuantFormat
 
 
 def download_model(model_name, remote_path):
@@ -104,9 +105,8 @@ def convert_gemm_to_matmul(model):
     return model
 
 
-def fix_topk(model_path):
+def fix_topk(model):
     """Fix TopK K input shape for onnxruntime 1.24+ compatibility."""
-    model = onnx.load(model_path, load_external_data=False)
     graph = model.graph
     nodes_fixed = 0
     for node in list(graph.node):
@@ -131,29 +131,39 @@ def fix_topk(model_path):
         node.input[1] = reshape_out
         nodes_fixed += 1
     if nodes_fixed:
-        onnx.save(model, model_path)
         print(f"  Fixed {nodes_fixed} TopK nodes")
+    return model
 
 
 def quantize_model(input_path, output_path, has_gemm=False):
-    """Quantize an ONNX model to int8 using dynamic quantization."""
+    """Quantize an ONNX model to int8 using MatMulNBitsQuantizer."""
     if has_gemm:
         print("  Loading and converting Gemm to MatMul+Add...")
         model = onnx.load(input_path)
         model = convert_gemm_to_matmul(model)
-        tmp_path = input_path + ".matmul.onnx"
-        onnx.save(model, tmp_path)
-        src = tmp_path
     else:
-        src = input_path
+        model = input_path
 
-    print("  Quantizing to int8 (dynamic) ...")
-    quantize_dynamic(src, output_path, weight_type=QuantType.QInt8)
+    print("  Quantizing to int8 (block_size=128, symmetric) ...")
+    quant = MatMulNBitsQuantizer(
+        model=model,
+        bits=8,
+        block_size=128,
+        is_symmetric=True,
+        accuracy_level=4,
+        quant_format=QuantFormat.QOperator,
+        op_types_to_quantize=("MatMul",),
+    )
+    quant.process()
 
-    fix_topk(output_path)
+    result = quant.model.model
+    nbits = sum(1 for n in result.graph.node if n.op_type == "MatMulNBits")
+    print(f"  MatMulNBits nodes created: {nbits}")
 
-    if has_gemm and os.path.exists(tmp_path):
-        os.remove(tmp_path)
+    result = fix_topk(result)
+
+    print(f"  Saving: {output_path}")
+    onnx.save(result, output_path)
 
     size = os.path.getsize(output_path) / 1024 / 1024
     print(f"  Output size: {size:.0f}MB")
@@ -193,7 +203,6 @@ def main():
 
     models = [
         ("cnhubert.onnx", "cnhubert_int8.onnx", False),
-        ("t2s_encoder.onnx", "t2s_encoder_int8.onnx", False),
         ("t2s_fsdec.onnx", "t2s_fsdec_int8.onnx", True),
         ("t2s_sdec.opt.onnx", "t2s_sdec_int8.onnx", True),
     ]

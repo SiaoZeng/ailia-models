@@ -133,11 +133,9 @@ if args.distill is not None:
 if args.model_type in ("int4", "int8") and args.distill is None:
     SUFFIX = "_int4" if args.model_type == "int4" else "_int8"
     WEIGHT_PATH_SSL = "cnhubert" + SUFFIX + ".onnx"
-    WEIGHT_PATH_T2S_ENCODER = "t2s_encoder" + SUFFIX + ".onnx"
     WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec" + SUFFIX + ".onnx"
     WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec" + SUFFIX + ".onnx"
     MODEL_PATH_SSL = WEIGHT_PATH_SSL + ".prototxt"
-    MODEL_PATH_T2S_ENCODER = WEIGHT_PATH_T2S_ENCODER + ".prototxt"
     MODEL_PATH_T2S_FIRST_DECODER = WEIGHT_PATH_T2S_FIRST_DECODER + ".prototxt"
     MODEL_PATH_T2S_STAGE_DECODER = WEIGHT_PATH_T2S_STAGE_DECODER + ".prototxt"
 
