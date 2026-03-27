@@ -32,7 +32,7 @@ import argparse
 import subprocess
 
 import onnx
-from onnx import numpy_helper
+from onnx import numpy_helper, helper, TensorProto
 from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
 from onnxruntime.quantization.quant_utils import QuantFormat
 
@@ -105,6 +105,41 @@ def convert_gemm_to_matmul(model):
     return model
 
 
+def fix_topk(model):
+    """Fix TopK K input shape for onnxruntime 1.24+ compatibility.
+
+    onnxruntime requires TopK's K input to be a 1-D tensor of size 1.
+    Some models have scalar or dynamically shaped K inputs that fail
+    shape inference. This adds a Reshape node to ensure K is [1].
+    """
+    graph = model.graph
+    nodes_fixed = 0
+    for node in list(graph.node):
+        if node.op_type != "TopK":
+            continue
+        k_input = node.input[1]
+        reshape_out = k_input + "_reshaped_1d"
+        shape_const_name = k_input + "_reshape_shape"
+        graph.initializer.append(
+            helper.make_tensor(shape_const_name, TensorProto.INT64, [1], [1])
+        )
+        idx = list(graph.node).index(node)
+        graph.node.insert(
+            idx,
+            helper.make_node(
+                "Reshape",
+                inputs=[k_input, shape_const_name],
+                outputs=[reshape_out],
+                name=node.name + "_reshape_k",
+            ),
+        )
+        node.input[1] = reshape_out
+        nodes_fixed += 1
+    if nodes_fixed:
+        print(f"  Fixed {nodes_fixed} TopK nodes")
+    return model
+
+
 def quantize_model(input_path, output_path, has_gemm=False):
     """Quantize an ONNX model to int4."""
     if has_gemm:
@@ -129,6 +164,8 @@ def quantize_model(input_path, output_path, has_gemm=False):
     result = quant.model.model
     nbits = sum(1 for n in result.graph.node if n.op_type == "MatMulNBits")
     print(f"  MatMulNBits nodes created: {nbits}")
+
+    result = fix_topk(result)
 
     print(f"  Saving: {output_path}")
     onnx.save(result, output_path)
