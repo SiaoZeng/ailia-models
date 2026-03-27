@@ -9,7 +9,7 @@ import yaml
 import warnings
 
 class OrtInferSession:
-    def __init__(self, model_file, device_id=-1, intra_op_num_threads=4):
+    def __init__(self, model_file, device_id=-1, intra_op_num_threads=4, disable_optimization=False):
         from onnxruntime import (
             GraphOptimizationLevel,
             InferenceSession,
@@ -23,7 +23,10 @@ class OrtInferSession:
         sess_opt.intra_op_num_threads = intra_op_num_threads
         sess_opt.log_severity_level = 4
         sess_opt.enable_cpu_mem_arena = False
-        sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
+        if disable_optimization:
+            sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_DISABLE_ALL
+        else:
+            sess_opt.graph_optimization_level = GraphOptimizationLevel.ORT_ENABLE_ALL
 
         cuda_ep = "CUDAExecutionProvider"
         cuda_provider_options = {
