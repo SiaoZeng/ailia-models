@@ -88,8 +88,8 @@ parser.add_argument("--speed", type=float, default=1.0, help="Speech rate")
 parser.add_argument("--onnx", action="store_true", help="use onnx runtime")
 parser.add_argument("--profile", action="store_true", help="use profile model")
 parser.add_argument(
-    "--model_type", type=str, default="fp32", choices=["fp32", "int4", "int8"],
-    help="model type (fp32, int4 or int8).",
+    "--quantize", type=str, default=None, choices=["int4", "int8"],
+    help="use int4 or int8 quantized model.",
 )
 parser.add_argument("--distill", type=str, default=None, help="use distill model", choices=(None, "tiny", "base", "small"))
 args = update_parser(parser, check_input_type=False)
@@ -127,11 +127,11 @@ if args.distill is not None:
     MODEL_PATH_T2S_STAGE_DECODER = None
 
 # ======================
-# Int4 models
+# Quantized models
 # ======================
 
-if args.model_type in ("int4", "int8") and args.distill is None:
-    SUFFIX = "_int4" if args.model_type == "int4" else "_int8"
+if args.quantize is not None and args.distill is None:
+    SUFFIX = "_" + args.quantize
     WEIGHT_PATH_SSL = "cnhubert" + SUFFIX + ".onnx"
     WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec" + SUFFIX + ".onnx"
     WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec" + SUFFIX + ".onnx"
@@ -748,7 +748,7 @@ def main():
         import onnxruntime
 
         sess_options = None
-        if args.model_type in ("int4", "int8"):
+        if args.quantize is not None:
             sess_options = onnxruntime.SessionOptions()
             sess_options.graph_optimization_level = (
                 onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
