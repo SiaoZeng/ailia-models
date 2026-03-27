@@ -87,6 +87,10 @@ parser.add_argument("--temperature", type=float, default=1.0, help="temperature"
 parser.add_argument("--speed", type=float, default=1.0, help="Speech rate")
 parser.add_argument("--onnx", action="store_true", help="use onnx runtime")
 parser.add_argument("--profile", action="store_true", help="use profile model")
+parser.add_argument(
+    "--model_type", type=str, default="fp32", choices=["fp32", "int4"],
+    help="model type (fp32 or int4).",
+)
 parser.add_argument("--distill", type=str, default=None, help="use distill model", choices=(None, "tiny", "base", "small"))
 args = update_parser(parser, check_input_type=False)
 
@@ -121,6 +125,20 @@ if args.distill is not None:
     MODEL_PATH_T2S_ENCODER = None
     MODEL_PATH_T2S_FIRST_DECODER = None
     MODEL_PATH_T2S_STAGE_DECODER = None
+
+# ======================
+# Int4 models
+# ======================
+
+if args.model_type == "int4" and args.distill is None:
+    WEIGHT_PATH_SSL = "cnhubert_int4.onnx"
+    WEIGHT_PATH_T2S_ENCODER = "t2s_encoder_int4.onnx"
+    WEIGHT_PATH_T2S_FIRST_DECODER = "t2s_fsdec_int4.onnx"
+    WEIGHT_PATH_T2S_STAGE_DECODER = "t2s_sdec_int4.onnx"
+    MODEL_PATH_SSL = WEIGHT_PATH_SSL + ".prototxt"
+    MODEL_PATH_T2S_ENCODER = WEIGHT_PATH_T2S_ENCODER + ".prototxt"
+    MODEL_PATH_T2S_FIRST_DECODER = WEIGHT_PATH_T2S_FIRST_DECODER + ".prototxt"
+    MODEL_PATH_T2S_STAGE_DECODER = WEIGHT_PATH_T2S_STAGE_DECODER + ".prototxt"
 
 # ======================
 # Secondary Functions
@@ -730,10 +748,17 @@ def main():
     if args.onnx:
         import onnxruntime
 
-        ssl = onnxruntime.InferenceSession(WEIGHT_PATH_SSL)
-        t2s_encoder = onnxruntime.InferenceSession(WEIGHT_PATH_T2S_ENCODER)
-        t2s_first_decoder = onnxruntime.InferenceSession(WEIGHT_PATH_T2S_FIRST_DECODER)
-        t2s_stage_decoder = onnxruntime.InferenceSession(WEIGHT_PATH_T2S_STAGE_DECODER)
+        sess_options = None
+        if args.model_type == "int4":
+            sess_options = onnxruntime.SessionOptions()
+            sess_options.graph_optimization_level = (
+                onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+            )
+
+        ssl = onnxruntime.InferenceSession(WEIGHT_PATH_SSL, sess_options=sess_options)
+        t2s_encoder = onnxruntime.InferenceSession(WEIGHT_PATH_T2S_ENCODER, sess_options=sess_options)
+        t2s_first_decoder = onnxruntime.InferenceSession(WEIGHT_PATH_T2S_FIRST_DECODER, sess_options=sess_options)
+        t2s_stage_decoder = onnxruntime.InferenceSession(WEIGHT_PATH_T2S_STAGE_DECODER, sess_options=sess_options)
         vits = onnxruntime.InferenceSession(WEIGHT_PATH_VITS)
         sv_net = onnxruntime.InferenceSession(WEIGHT_PATH_SV)
         bert_net = onnxruntime.InferenceSession(WEIGHT_PATH_BERT) if use_zh else None

@@ -51,6 +51,14 @@ The v2Pro architecture differs from v2 by:
 - gin_channels=1024 (vs 512 in v2), with ge_to512 projection for MRTE
 - PReLU activation on combined reference + speaker embeddings
 
+By adding the `--model_type` option, you can use int4 quantized models for faster inference and smaller memory footprint.
+```
+python3 gpt-sovits-v2-pro.py --model_type int4
+```
+
+The int4 models are quantized using onnxruntime's MatMulNBitsQuantizer.
+The export script is located in `export/export_int4.py`.
+
 ### ONNX Export
 
 To export the VITS model:
