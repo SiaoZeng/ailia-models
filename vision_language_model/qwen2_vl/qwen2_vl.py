@@ -77,11 +77,11 @@ parser.add_argument(
     "--disable_ailia_tokenizer", action="store_true", help="disable ailia tokenizer."
 )
 parser.add_argument(
-    "--model_type",
-    type=str,
-    default=None,
-    choices=["fp32", "fp16", "int4"],
-    help="model type (fp32, fp16, int4).",
+    "--fp16", action="store_true", help="use fp16 model.",
+)
+parser.add_argument(
+    "--quantize", type=str, default=None, choices=["int4"],
+    help="use int4 quantized model.",
 )
 parser.add_argument(
     "--temperature",
@@ -118,19 +118,15 @@ args = update_parser(parser)
 # Model selection
 # ======================
 
-MODEL_TYPE = "fp32"
-if args.model_type is not None:
-    MODEL_TYPE = args.model_type
-
 FP16 = ""
-if MODEL_TYPE == "fp16":
+if args.fp16:
     FP16 = "_fp16"
 
 OPT = ".opt"
 if args.normal:
     OPT = ""
 
-if MODEL_TYPE == "int4":
+if args.quantize == "int4":
     WEIGHT_PATH = "Qwen2-VL-2B_int4.onnx"
     WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis_int4.onnx"
     MODEL_PATH = "Qwen2-VL-2B_int4.onnx.prototxt"
@@ -142,7 +138,7 @@ else:
     WEIGHT_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx"
     MODEL_PATH = "Qwen2-VL-2B" + FP16 + ".onnx.prototxt"
     MODEL_VIS_PATH = "Qwen2-VL-2B_vis" + FP16 + OPT + ".onnx.prototxt"
-    if MODEL_TYPE == "fp16":
+    if args.fp16:
         PB_PATH = "Qwen2-VL-2B_weights_fp16.pb"
         PB_VIS_PATH = None
     else:
@@ -913,7 +909,7 @@ def main():
         visual = onnxruntime.InferenceSession(WEIGHT_VIS_PATH, providers=providers)
 
         sess_options = onnxruntime.SessionOptions()
-        if MODEL_TYPE == "int4":
+        if args.quantize is not None:
             sess_options.graph_optimization_level = (
                 onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
             )
