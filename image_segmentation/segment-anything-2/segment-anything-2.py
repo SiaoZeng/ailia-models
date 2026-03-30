@@ -416,12 +416,8 @@ def main():
         # New models: 4D mask prompt encoder and 6D matmul memory attention with dynamic batch
         WEIGHT_PROMPT_ENCODER_L_PATH = 'prompt_encoder_with_mask_'+model_type_versioned+'.onnx'
         MODEL_PROMPT_ENCODER_L_PATH = 'prompt_encoder_with_mask_'+model_type_versioned+'.onnx.prototxt'
-        if args.version == "2.1":
-            WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.onnx'
-            MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.onnx.prototxt'
-        else:
-            WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.opt.onnx'
-            MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.opt.onnx.prototxt'
+        WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.onnx'
+        MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.onnx.prototxt'
 
     # model files check and download
     check_and_download_models(WEIGHT_IMAGE_ENCODER_L_PATH, MODEL_IMAGE_ENCODER_L_PATH, REMOTE_PATH)
