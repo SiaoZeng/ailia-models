@@ -338,8 +338,7 @@ def recognize_from_image_auto(image_encoder, prompt_encoder, mask_decoder):
             # Draw contour
             mask_uint8 = mask.astype(np.uint8)
             contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-            smoothed = [cv2.approxPolyDP(c, 0.01 * cv2.arcLength(c, True), True) for c in contours]
-            cv2.drawContours(image, smoothed, -1, (0, 0, 255), thickness=1, lineType=cv2.LINE_AA)
+            cv2.drawContours(image, contours, -1, (0, 0, 255), thickness=1, lineType=cv2.LINE_AA)
         image = np.clip(image, 0, 255).astype(np.uint8)
 
         savepath = get_savepath(args.savepath, image_path, ext='.png')
