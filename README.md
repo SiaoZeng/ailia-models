@@ -9,6 +9,23 @@ The collection of pre-trained, state-of-the-art AI models.
 - [Contact us](https://www.ailia.ai/en-contact-product)
 - [Mail](mailto:contact@ailia.ai)
 
+# Why ailia SDK
+
+|  | ailia SDK | ONNX Runtime |
+|:---|:---:|:---:|
+| GPU inference via Vulkan and Metal | ✓ | ✗ |
+| Speech / Voice / LLM / Tokenizer / Tracker libraries | ✓ | ✗ |
+| 400+ verified model library with sample code | ✓ | ✗ |
+| Unity bindings and model collection | ✓ | △ |
+| Embedded SoC support (Jetson / Qualcomm / NXP / TI) | ✓ | △ |
+| Model‑specific optimization | ✓ | △ |
+
+△ = Supported but limited due to general-purpose implementation.
+
+ailia SDK is built in-house from the ground up, enabling device- and model-specific optimizations that general-purpose runtimes cannot easily provide—such as native Vulkan/Metal GPU backends and dedicated tuning for embedded SoCs.
+
+Beyond Python, ailia provides official libraries for Unity (C#), Kotlin, and C++ that cover the full pipeline from LLM tokenization to object tracking. You can prototype with [ailia MODELS (Python)](https://github.com/ailia-ai/ailia-models), then move to production using [ailia MODELS Unity](https://github.com/ailia-ai/ailia-models-unity) or [ailia MODELS Kotlin](https://github.com/ailia-ai/ailia-models-kotlin).
+
 # How to use
 
 Try now on [Google Colaboratory](https://www.ailia.ai/launch_to_colab)
