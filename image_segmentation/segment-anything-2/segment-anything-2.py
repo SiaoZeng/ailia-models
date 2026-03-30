@@ -125,7 +125,7 @@ def show_mask(mask, img, color = np.array([255, 144, 30]), obj_id=None):
     mask = mask.reshape(h, w, 1)
 
     mask_image = mask * color
-    img = (img * ~mask) + (img * mask) * 0.6 + mask_image * 0.4
+    img = (img * ~mask) + (img * mask) * 0.5 + mask_image * 0.5
 
     return img
 
@@ -294,12 +294,22 @@ def recognize_from_image_auto(image_encoder, prompt_encoder, mask_decoder):
         logger.info(f'\tprocessing time {end - start} ms')
         logger.info(f'\tdetected {len(binary_masks)} masks')
 
-        # Visualize with random colors
+        # Sort masks by area (largest first, so smaller masks render on top)
+        areas = np.sum(binary_masks, axis=(1, 2))
+        sorted_idx = np.argsort(-areas)
+        binary_masks = binary_masks[sorted_idx]
+
+        # Visualize with random colors and contours (matching official SAM2 style)
         image = image.astype(np.float64)
         np.random.seed(0)
         for mask in binary_masks:
-            color = np.random.randint(60, 255, size=3)
+            color = (np.random.random(3) * 255).astype(np.float64)
             image = show_mask(mask, image, color=color)
+            # Draw contour
+            mask_uint8 = mask.astype(np.uint8)
+            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            smoothed = [cv2.approxPolyDP(c, 0.01 * cv2.arcLength(c, True), True) for c in contours]
+            cv2.drawContours(image, smoothed, -1, (0, 0, 255), thickness=1, lineType=cv2.LINE_AA)
         image = np.clip(image, 0, 255).astype(np.uint8)
 
         savepath = get_savepath(args.savepath, image_path, ext='.png')
