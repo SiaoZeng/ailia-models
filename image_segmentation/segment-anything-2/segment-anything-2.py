@@ -445,6 +445,17 @@ def main():
     if args.version == "2.1":
         check_and_download_models(WEIGHT_TPOS_L_PATH, MODEL_TPOS_L_PATH, REMOTE_PATH)
 
+    # Download external data files for new models (ONNX external data format)
+    if not args.legacy:
+        from model_utils import check_and_download_file
+        PROMPT_ENCODER_DATA = 'prompt_encoder_'+model_type+'.onnx.data'
+        check_and_download_file(PROMPT_ENCODER_DATA, REMOTE_PATH)
+        if args.version == "2.1":
+            MEMORY_ATTENTION_DATA = 'memory_attention_'+model_type+'.onnx.data'
+        else:
+            MEMORY_ATTENTION_DATA = 'memory_attention_'+model_type+'.opt.onnx.data'
+        check_and_download_file(MEMORY_ATTENTION_DATA, REMOTE_PATH)
+
     if args.onnx:
         import onnxruntime
         image_encoder = onnxruntime.InferenceSession(WEIGHT_IMAGE_ENCODER_L_PATH)
