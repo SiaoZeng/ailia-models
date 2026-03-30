@@ -13,8 +13,8 @@ The collection of pre-trained, state-of-the-art AI models.
 | GPU inference via Vulkan and Metal | ✓ | − |
 | ailia Speech / Voice / LLM / Tokenizer / Tracker | ✓ | − |
 | 400+ verified model library with sample code | ✓ | − |
+| Non-OS / RTOS inference support | ✓ | − |
 | Unity bindings and model collection | ✓ | △ |
-| Non-OS / RTOS inference support | ✓ | △ |
 | Model‑specific optimization | ✓ | △ |
 
 △ = Supported but limited due to general-purpose implementation.
