@@ -425,15 +425,14 @@ def main():
             MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_'+model_type_versioned+'.opt.onnx.prototxt'
     else:
         # New models: 4D mask prompt encoder and 6D matmul memory attention with dynamic batch
-        # New model files do not include version suffix in the filename (version is in the folder path)
-        WEIGHT_PROMPT_ENCODER_L_PATH = 'prompt_encoder_with_mask_'+model_type+'.onnx'
-        MODEL_PROMPT_ENCODER_L_PATH = 'prompt_encoder_with_mask_'+model_type+'.onnx.prototxt'
+        WEIGHT_PROMPT_ENCODER_L_PATH = 'prompt_encoder_with_mask_'+model_type_versioned+'.onnx'
+        MODEL_PROMPT_ENCODER_L_PATH = 'prompt_encoder_with_mask_'+model_type_versioned+'.onnx.prototxt'
         if args.version == "2.1":
-            WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type+'.onnx'
-            MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type+'.onnx.prototxt'
+            WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.onnx'
+            MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.onnx.prototxt'
         else:
-            WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type+'.opt.onnx'
-            MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type+'.opt.onnx.prototxt'
+            WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.opt.onnx'
+            MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_6d_'+model_type_versioned+'.opt.onnx.prototxt'
 
     # model files check and download
     check_and_download_models(WEIGHT_IMAGE_ENCODER_L_PATH, MODEL_IMAGE_ENCODER_L_PATH, REMOTE_PATH)
@@ -444,17 +443,6 @@ def main():
     check_and_download_models(WEIGHT_MLP_L_PATH, MODEL_MLP_L_PATH, REMOTE_PATH)
     if args.version == "2.1":
         check_and_download_models(WEIGHT_TPOS_L_PATH, MODEL_TPOS_L_PATH, REMOTE_PATH)
-
-    # Download external data files for new models (ONNX external data format)
-    if not args.legacy:
-        from model_utils import check_and_download_file
-        PROMPT_ENCODER_DATA = 'prompt_encoder_'+model_type+'.onnx.data'
-        check_and_download_file(PROMPT_ENCODER_DATA, REMOTE_PATH)
-        if args.version == "2.1":
-            MEMORY_ATTENTION_DATA = 'memory_attention_'+model_type+'.onnx.data'
-        else:
-            MEMORY_ATTENTION_DATA = 'memory_attention_'+model_type+'.opt.onnx.data'
-        check_and_download_file(MEMORY_ATTENTION_DATA, REMOTE_PATH)
 
     if args.onnx:
         import onnxruntime

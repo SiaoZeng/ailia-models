@@ -1762,13 +1762,7 @@ class SAM2VideoPredictor():
         if self.benchmark:
             start = int(round(time.time() * 1000))
 
-        if not self.legacy:
-            # New 6D matmul model with dynamic batch support (combined memory)
-            if self.onnx:
-                pix_feat_with_mem = memory_attention.run(None, {"curr":current_vision_feats[0], "memory":memory, "curr_pos":current_vision_pos_embeds[0], "memory_pos":memory_pos_embed, "num_obj_ptr_tokens":num_obj_ptr_tokens_numpy})
-            else:
-                pix_feat_with_mem = memory_attention.run({"curr":current_vision_feats[0], "memory":memory, "curr_pos":current_vision_pos_embeds[0], "memory_pos":memory_pos_embed, "num_obj_ptr_tokens":num_obj_ptr_tokens_numpy})
-        elif self.version == "2.1":
+        if not self.legacy or self.version == "2.1":
             memory_1 = memory[:-num_obj_ptr_tokens,:,:]
             memory_2 = memory[-num_obj_ptr_tokens:,:,:]
             memory_pos_embed_1 = memory_pos_embed[:-num_obj_ptr_tokens,:,:]
