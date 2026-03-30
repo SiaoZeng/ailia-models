@@ -73,6 +73,30 @@ parser.add_argument(
     '--legacy', action='store_true',
     help='Use legacy ONNX model. (4D matmul with batch=1, mask prompt not supported)'
 )
+parser.add_argument(
+    '--auto', action='store_true',
+    help='Automatic mask generation mode. Segment all objects in the image.'
+)
+parser.add_argument(
+    '--points_per_side', type=int, default=32,
+    help='Grid density for auto mode. (default: 32, generates 32x32=1024 points)'
+)
+parser.add_argument(
+    '--points_per_batch', type=int, default=64,
+    help='Batch size for auto mode inference. (default: 64)'
+)
+parser.add_argument(
+    '--pred_iou_thresh', type=float, default=0.8,
+    help='Predicted IoU threshold for auto mode. (default: 0.8)'
+)
+parser.add_argument(
+    '--stability_score_thresh', type=float, default=0.95,
+    help='Stability score threshold for auto mode. (default: 0.95)'
+)
+parser.add_argument(
+    '--box_nms_thresh', type=float, default=0.7,
+    help='Box NMS IoU threshold for auto mode. (default: 0.7)'
+)
 
 args = update_parser(parser)
 
@@ -236,6 +260,147 @@ def recognize_from_image(image_encoder, prompt_encoder, mask_decoder):
         image = show_mask(masks[0], image)
         image = show_points(input_point, input_label, image)
         image = show_box(input_box, image)
+        cv2.imwrite(savepath, image)
+
+
+def build_point_grid(n_per_side):
+    """Generate an evenly spaced grid of points in [0,1]^2."""
+    offset = 1 / (2 * n_per_side)
+    points_one_side = np.linspace(offset, 1 - offset, n_per_side)
+    points_x = np.tile(points_one_side[None, :], (n_per_side, 1))
+    points_y = np.tile(points_one_side[:, None], (1, n_per_side))
+    points = np.stack([points_x, points_y], axis=-1).reshape(-1, 2)
+    return points
+
+
+def calculate_stability_score(mask_logits, mask_threshold=0.0, threshold_offset=1.0):
+    """Compute stability score: IoU between masks at threshold +/- offset."""
+    intersections = np.sum(mask_logits > (mask_threshold + threshold_offset), axis=(-2, -1)).astype(np.float32)
+    unions = np.sum(mask_logits > (mask_threshold - threshold_offset), axis=(-2, -1)).astype(np.float32)
+    return np.where(unions > 0, intersections / unions, 1.0)
+
+
+def mask_to_box(masks):
+    """Compute bounding boxes from binary masks. masks: [N, H, W] -> boxes: [N, 4] (x1,y1,x2,y2)."""
+    N = masks.shape[0]
+    boxes = np.zeros((N, 4), dtype=np.float32)
+    for i in range(N):
+        ys, xs = np.where(masks[i])
+        if len(xs) == 0:
+            continue
+        boxes[i] = [xs.min(), ys.min(), xs.max(), ys.max()]
+    return boxes
+
+
+def box_iou(boxes1, boxes2):
+    """Compute IoU between two sets of boxes. boxes: [N, 4] (x1,y1,x2,y2)."""
+    x1 = np.maximum(boxes1[:, None, 0], boxes2[None, :, 0])
+    y1 = np.maximum(boxes1[:, None, 1], boxes2[None, :, 1])
+    x2 = np.minimum(boxes1[:, None, 2], boxes2[None, :, 2])
+    y2 = np.minimum(boxes1[:, None, 3], boxes2[None, :, 3])
+    inter = np.maximum(x2 - x1, 0) * np.maximum(y2 - y1, 0)
+    area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
+    area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
+    union = area1[:, None] + area2[None, :] - inter
+    return np.where(union > 0, inter / union, 0.0)
+
+
+def nms(boxes, scores, iou_threshold):
+    """Greedy NMS. Returns indices to keep."""
+    order = np.argsort(-scores)
+    keep = []
+    suppressed = np.zeros(len(scores), dtype=bool)
+    for i in order:
+        if suppressed[i]:
+            continue
+        keep.append(i)
+        ious = box_iou(boxes[i:i+1], boxes)[0]
+        suppressed |= (ious > iou_threshold)
+        suppressed[i] = False  # don't suppress self
+    return np.array(keep)
+
+
+def recognize_from_image_auto(image_encoder, prompt_encoder, mask_decoder):
+    image_predictor = SAM2ImagePredictor(args.legacy)
+
+    for image_path in args.input:
+        logger.info(f'Processing: {image_path}')
+        image = cv2.imread(image_path)
+        orig_hw = [image.shape[0], image.shape[1]]
+        image_size = 1024
+        image_np = preprocess_frame(image, image_size=image_size)
+
+        start = int(round(time.time() * 1000))
+        features = image_predictor.set_image(image_np, image_encoder, args.onnx)
+
+        # Build grid of points in pixel coordinates
+        grid = build_point_grid(args.points_per_side)  # [N, 2] in [0,1]
+        point_coords = grid * np.array([orig_hw[1], orig_hw[0]])  # scale to pixel
+        point_coords = point_coords.astype(np.float32)
+
+        all_masks = []
+        all_ious = []
+        all_points = []
+
+        # Process in batches
+        n_points = point_coords.shape[0]
+        for i in range(0, n_points, args.points_per_batch):
+            batch_coords = point_coords[i:i+args.points_per_batch]
+            masks_flat, iou_flat, points_flat = image_predictor.predict_batch(
+                features=features,
+                orig_hw=orig_hw,
+                point_coords_batch=batch_coords,
+                prompt_encoder=prompt_encoder,
+                mask_decoder=mask_decoder,
+                onnx=args.onnx
+            )
+            all_masks.append(masks_flat)
+            all_ious.append(iou_flat)
+            all_points.append(points_flat)
+
+        all_masks = np.concatenate(all_masks, axis=0)    # [M, H, W] logits
+        all_ious = np.concatenate(all_ious, axis=0)       # [M]
+        all_points = np.concatenate(all_points, axis=0)   # [M, 2]
+
+        # Filter by predicted IoU
+        keep = all_ious > args.pred_iou_thresh
+        all_masks = all_masks[keep]
+        all_ious = all_ious[keep]
+        all_points = all_points[keep]
+
+        # Filter by stability score
+        stability = calculate_stability_score(all_masks)
+        keep = stability >= args.stability_score_thresh
+        all_masks = all_masks[keep]
+        all_ious = all_ious[keep]
+        all_points = all_points[keep]
+
+        # Upscale masks to original resolution and binarize
+        binary_masks = np.zeros((all_masks.shape[0], orig_hw[0], orig_hw[1]), dtype=bool)
+        for i in range(all_masks.shape[0]):
+            resized = cv2.resize(all_masks[i], (orig_hw[1], orig_hw[0]), interpolation=cv2.INTER_LINEAR)
+            binary_masks[i] = resized > 0.0
+
+        # Compute bounding boxes and apply NMS
+        boxes = mask_to_box(binary_masks)
+        keep_idx = nms(boxes, all_ious, args.box_nms_thresh)
+        binary_masks = binary_masks[keep_idx]
+        all_ious = all_ious[keep_idx]
+
+        end = int(round(time.time() * 1000))
+        logger.info(f'\tprocessing time {end - start} ms')
+        logger.info(f'\tdetected {len(binary_masks)} masks')
+
+        # Visualize with random colors
+        image = image.astype(np.float64)
+        np.random.seed(0)
+        for mask in binary_masks:
+            color = np.random.randint(60, 255, size=3)
+            image = show_mask(mask, image, color=color)
+        image = np.clip(image, 0, 255).astype(np.uint8)
+
+        savepath = get_savepath(args.savepath, image_path, ext='.png')
+        logger.info(f'saved at : {savepath}')
         cv2.imwrite(savepath, image)
 
 
@@ -457,6 +622,8 @@ def main():
 
     if args.video is not None:
         recognize_from_video(image_encoder, prompt_encoder, mask_decoder, memory_attention, memory_encoder, mlp, obj_ptr_tpos_proj)
+    elif args.auto:
+        recognize_from_image_auto(image_encoder, prompt_encoder, mask_decoder)
     else:
         recognize_from_image(image_encoder, prompt_encoder, mask_decoder)
 

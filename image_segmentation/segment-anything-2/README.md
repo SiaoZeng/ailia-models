@@ -24,6 +24,12 @@
 
 ![Output](video_4.png)
 
+## Automatic mask generation mode
+
+### Output
+
+![Output](output_auto.png)
+
 ## Usage
 Automatically downloads the onnx and prototxt files on the first run.
 It is necessary to be connected to the Internet while downloading.
@@ -43,13 +49,23 @@ For the webcam,
 $ python3 segment-anything-2.py -v 0 --pos 960 540
 ```
 
+For automatic mask generation (segment all objects),
+```bash
+$ python3 segment-anything-2.py --auto
+```
+
+You can adjust automatic mask generation parameters.
+```bash
+$ python3 segment-anything-2.py --auto --points_per_side 32 --pred_iou_thresh 0.8 --stability_score_thresh 0.95
+```
+
 By default, the ailia SDK is used. If you want to use ONNX Runtime, use the --onnx option.
 
 ```bash
 $ python3 segment-anything-2.py --onnx
 ```
 
-If you want to specify the input image, put the image path after the `--input` option.  
+If you want to specify the input image, put the image path after the `--input` option.
 You can use `--savepath` option to change the name of the output file to save.
 ```bash
 $ python3 segment-anything-2.py --input IMAGE_PATH --savepath SAVE_IMAGE_PATH
@@ -87,6 +103,11 @@ $ python3 segment-anything-2.py --model_type hiera_l
 By adding the `--version` option, you can specify model type which is selected from "2" and "2.1". (default is 2)
 ```bash
 $ python3 segment-anything-2.py --version "2.1"
+```
+
+To use legacy ONNX models (4D matmul with batch=1, mask prompt not supported), use the --legacy option.
+```bash
+$ python3 segment-anything-2.py --legacy
 ```
 
 To improve the performance of MemoryAttention, you can also reduce the number of reference images in past frames, which is num_mask_mem.
@@ -194,4 +215,10 @@ ONNX opset=17
 
 ## Model information
 
-memory_attention.onnx uses a 6-dimensional Matmul. memory_attention.opt.onnx can be implemented using a 4-dimensional Matmul instead of fixing the batch size to 1.
+By default, the new re-exported models are used:
+- `prompt_encoder_with_mask` : Supports 4D mask input (B,C,H,W) for Conv2d compatibility.
+- `memory_attention_6d` : Uses 6D matmul with dynamic batch support.
+
+With `--legacy`, the old models are used:
+- `prompt_encoder` : 3D mask input (mask prompt not supported).
+- `memory_attention.opt` : 4D matmul with batch size fixed to 1.

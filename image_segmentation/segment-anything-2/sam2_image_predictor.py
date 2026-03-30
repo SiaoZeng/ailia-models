@@ -246,3 +246,97 @@ class SAM2ImagePredictor:
         interpolated_masks = np.array(interpolated_masks)
 
         return interpolated_masks
+
+    def predict_batch(
+        self,
+        features,
+        orig_hw,
+        point_coords_batch,
+        prompt_encoder=None,
+        mask_decoder=None,
+        onnx=False
+    ):
+        """
+        Predict masks for a batch of single-point prompts.
+
+        Parameters
+        ----------
+        point_coords_batch : np.ndarray
+            [B, 2] array of point coordinates in pixel space.
+
+        Returns
+        -------
+        all_masks : np.ndarray [B*3, H, W] binary masks
+        all_ious : np.ndarray [B*3] IoU predictions
+        all_low_res_masks : np.ndarray [B*3, 256, 256] low-res logits
+        all_points : np.ndarray [B*3, 2] repeated point coordinates
+        """
+        B = point_coords_batch.shape[0]
+
+        # Transform coordinates to model space
+        coords = self.transform_coords(point_coords_batch, orig_hw)  # [B, 2]
+        coords = coords[:, None, :].astype(np.float32)  # [B, 1, 2]
+        labels = np.ones((B, 1), dtype=np.int32)  # all positive points
+
+        # Mask dummy for batch
+        if self.legacy:
+            mask_input = np.zeros((B, 256, 256), dtype=np.float32)
+        else:
+            mask_input = np.zeros((B, 1, 256, 256), dtype=np.float32)
+        masks_enable = np.array([0], dtype=np.int32)
+
+        # Run prompt encoder (batch)
+        if onnx:
+            sparse_embeddings, dense_embeddings, dense_pe = prompt_encoder.run(
+                None, {"coords": coords, "labels": labels, "masks": mask_input, "masks_enable": masks_enable})
+        else:
+            sparse_embeddings, dense_embeddings, dense_pe = prompt_encoder.run(
+                {"coords": coords, "labels": labels, "masks": mask_input, "masks_enable": masks_enable})
+
+        # Repeat image features for batch
+        image_embed = np.repeat(features["image_embed"], B, axis=0)  # [B, C, H, W]
+        high_res_feat1 = np.repeat(features["high_res_feats"][0], B, axis=0)
+        high_res_feat2 = np.repeat(features["high_res_feats"][1], B, axis=0)
+
+        # Run mask decoder per-item (mask_decoder does not support batch)
+        image_embed = features["image_embed"]  # [1, C, H, W]
+        high_res_feat1 = features["high_res_feats"][0]  # [1, C, H, W]
+        high_res_feat2 = features["high_res_feats"][1]  # [1, C, H, W]
+
+        all_masks = []
+        all_ious = []
+        # dense_pe is a constant (same for all items), use first element
+        dense_pe_single = dense_pe[0:1] if dense_pe.shape[0] > 1 else dense_pe
+
+        for i in range(B):
+            if onnx:
+                masks_i, iou_i, _, _ = mask_decoder.run(None, {
+                    "image_embeddings": image_embed,
+                    "image_pe": dense_pe_single,
+                    "sparse_prompt_embeddings": sparse_embeddings[i:i+1],
+                    "dense_prompt_embeddings": dense_embeddings[i:i+1],
+                    "high_res_features1": high_res_feat1,
+                    "high_res_features2": high_res_feat2})
+            else:
+                masks_i, iou_i, _, _ = mask_decoder.run({
+                    "image_embeddings": image_embed,
+                    "image_pe": dense_pe_single,
+                    "sparse_prompt_embeddings": sparse_embeddings[i:i+1],
+                    "dense_prompt_embeddings": dense_embeddings[i:i+1],
+                    "high_res_features1": high_res_feat1,
+                    "high_res_features2": high_res_feat2})
+            # Extract multimask outputs (indices 1:4)
+            all_masks.append(masks_i[:, 1:, :, :])  # [1, 3, H, W]
+            all_ious.append(iou_i[:, 1:])  # [1, 3]
+
+        masks = np.concatenate(all_masks, axis=0)  # [B, 3, H, W]
+        iou_pred = np.concatenate(all_ious, axis=0)  # [B, 3]
+
+        # Flatten: [B, 3, H, W] -> [B*3, H, W], [B*3]
+        masks_flat = masks.reshape(-1, masks.shape[-2], masks.shape[-1])  # [B*3, H, W]
+        iou_flat = iou_pred.reshape(-1)  # [B*3]
+
+        # Repeat points 3x to match
+        points_flat = np.repeat(point_coords_batch, 3, axis=0)  # [B*3, 2]
+
+        return masks_flat, iou_flat, points_flat
