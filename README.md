@@ -4,10 +4,20 @@ The collection of pre-trained, state-of-the-art AI models.
 
 # About ailia SDK
 
-[ailia SDK](https://ailia.ai/en/sdk/) is a self-contained, cross-platform, high-speed inference SDK for AI. The ailia SDK provides a consistent C++ API across Windows, Mac, Linux, iOS, Android, Jetson, and Raspberry Pi platforms. It also supports Unity (C#), Python, Rust, Flutter(Dart) and JNI for efficient AI implementation. The ailia SDK makes extensive use of the GPU through Vulkan and Metal to enable accelerated computing.
+[ailia SDK](https://ailia.ai/en/sdk/) is a cross-platform, high-speed inference SDK for AI. It supports Windows, Mac, Linux, iOS, Android, Jetson, and Raspberry Pi with GPU acceleration via Vulkan and Metal. Bindings are available for C++, Python, Unity (C#), Kotlin, Rust, and Flutter.
 
-- [Contact us](https://www.ailia.ai/en-contact-product)
-- [Mail](mailto:contact@ailia.ai)
+# Why ailia SDK
+
+|  | ailia SDK | ONNX Runtime |
+|:---|:---:|:---:|
+| GPU inference via Vulkan and Metal | ✓ | − |
+| ailia Speech / Voice / LLM / Tokenizer / Tracker | ✓ | − |
+| 400+ verified model library with sample code | ✓ | − |
+| Non-OS / RTOS inference support | ✓ | − |
+| Unity bindings and model collection | ✓ | △ |
+| Model‑specific optimization | ✓ | △ |
+
+△ = Supported but limited due to general-purpose implementation.
 
 # How to use
 
@@ -856,9 +866,17 @@ If you would like to try on your computer:
 |------------:|:------------:|:------------:|:------------:|:------------:|:------------:|
 |[acculus-pose](/commercial_model/acculus-pose) | [Acculus, Inc.](https://acculus.jp/) | Caffe | 1.2.3 and later | May 2018 | |
 
-# Other languages
+# Other platforms
+
+Prototype with ailia MODELS (Python), then deploy to production.
 
 - [unity version](https://github.com/ailia-ai/ailia-models-unity)
+- [kotlin version](https://github.com/ailia-ai/ailia-models-kotlin)
 - [c++ version](https://github.com/ailia-ai/ailia-models-cpp)
 - [flutter version](https://github.com/ailia-ai/ailia-models-flutter)
 - [rust version](https://github.com/ailia-ai/ailia-models-rust)
+
+# Contact
+
+- [Contact us](https://www.ailia.ai/en-contact-product)
+- [Mail](mailto:contact@ailia.ai)
