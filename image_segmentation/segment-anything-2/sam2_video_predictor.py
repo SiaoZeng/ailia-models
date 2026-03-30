@@ -109,7 +109,6 @@ class SAM2VideoPredictor():
     def __init__(
         self,
         onnx,
-        normal,
         benchmark,
         legacy=False,
         fill_hole_area=0,
@@ -122,7 +121,6 @@ class SAM2VideoPredictor():
         clear_non_cond_mem_for_multi_obj=False
     ):
         self.onnx = onnx
-        self.normal = normal
         self.benchmark = benchmark
         self.legacy = legacy
         self.fill_hole_area = fill_hole_area
@@ -1776,20 +1774,15 @@ class SAM2VideoPredictor():
             else:
                 pix_feat_with_mem = memory_attention.run({"curr":current_vision_feats[0], "memory_1":memory_1, "memory_2":memory_2, "curr_pos":current_vision_pos_embeds[0], "memory_pos_1":memory_pos_embed_1, "memory_pos_2":memory_pos_embed_2, "attention_mask_1":attention_mask_1, "attention_mask_2":attention_mask_2})
         else:
-            if self.normal:
-                if self.onnx:
-                    pix_feat_with_mem = memory_attention.run(None, {"curr":current_vision_feats[0], "memory":memory, "curr_pos":current_vision_pos_embeds[0], "memory_pos":memory_pos_embed, "num_obj_ptr_tokens":num_obj_ptr_tokens_numpy})
-                else:
-                    pix_feat_with_mem = memory_attention.run({"curr":current_vision_feats[0], "memory":memory, "curr_pos":current_vision_pos_embeds[0], "memory_pos":memory_pos_embed, "num_obj_ptr_tokens":num_obj_ptr_tokens_numpy})
+            # Legacy SAM2: 4D matmul with batch=1, split memory without attention_mask
+            memory_1 = memory[:-num_obj_ptr_tokens,:,:]
+            memory_2 = memory[-num_obj_ptr_tokens:,:,:]
+            memory_pos_embed_1 = memory_pos_embed[:-num_obj_ptr_tokens,:,:]
+            memory_pos_embed_2 = memory_pos_embed[-num_obj_ptr_tokens:,:,:]
+            if self.onnx:
+                pix_feat_with_mem = memory_attention.run(None, {"curr":current_vision_feats[0], "memory_1":memory_1, "memory_2":memory_2, "curr_pos":current_vision_pos_embeds[0], "memory_pos_1":memory_pos_embed_1, "memory_pos_2":memory_pos_embed_2})
             else:
-                memory_1 = memory[:-num_obj_ptr_tokens,:,:]
-                memory_2 = memory[-num_obj_ptr_tokens:,:,:]
-                memory_pos_embed_1 = memory_pos_embed[:-num_obj_ptr_tokens,:,:]
-                memory_pos_embed_2 = memory_pos_embed[-num_obj_ptr_tokens:,:,:]
-                if self.onnx:
-                    pix_feat_with_mem = memory_attention.run(None, {"curr":current_vision_feats[0], "memory_1":memory_1, "memory_2":memory_2, "curr_pos":current_vision_pos_embeds[0], "memory_pos_1":memory_pos_embed_1, "memory_pos_2":memory_pos_embed_2})
-                else:
-                    pix_feat_with_mem = memory_attention.run({"curr":current_vision_feats[0], "memory_1":memory_1, "memory_2":memory_2, "curr_pos":current_vision_pos_embeds[0], "memory_pos_1":memory_pos_embed_1, "memory_pos_2":memory_pos_embed_2})
+                pix_feat_with_mem = memory_attention.run({"curr":current_vision_feats[0], "memory_1":memory_1, "memory_2":memory_2, "curr_pos":current_vision_pos_embeds[0], "memory_pos_1":memory_pos_embed_1, "memory_pos_2":memory_pos_embed_2})
 
         if self.benchmark:
             end = int(round(time.time() * 1000))

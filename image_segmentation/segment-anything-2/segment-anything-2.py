@@ -66,16 +66,12 @@ parser.add_argument(
     help='execute onnxruntime version.'
 )
 parser.add_argument(
-    '--normal', action='store_true',
-    help='Use normal version of onnx model. Normal version requires 6 dim matmul. (legacy only)'
-)
-parser.add_argument(
     '--version', default='2', choices=('2', '2.1'),
     help='Select model.'
 )
 parser.add_argument(
     '--legacy', action='store_true',
-    help='Use legacy ONNX model. (old prompt_encoder and memory_attention)'
+    help='Use legacy ONNX model. (4D matmul with batch=1, mask prompt not supported)'
 )
 
 args = update_parser(parser)
@@ -281,7 +277,7 @@ def recognize_from_video(image_encoder, prompt_encoder, mask_decoder, memory_att
     else:
         writer = None
 
-    predictor = SAM2VideoPredictor(args.onnx, args.normal, args.benchmark, args.legacy)
+    predictor = SAM2VideoPredictor(args.onnx, args.benchmark, args.legacy)
 
     inference_state = predictor.init_state(args.num_mask_mem, args.max_obj_ptrs_in_encoder, args.version)
     predictor.reset_state(inference_state)
@@ -413,16 +409,9 @@ def main():
     if args.legacy:
         WEIGHT_PROMPT_ENCODER_L_PATH = 'prompt_encoder_'+model_type_versioned+'.onnx'
         MODEL_PROMPT_ENCODER_L_PATH = 'prompt_encoder_'+model_type_versioned+'.onnx.prototxt'
-        if args.normal:
-            # 6dim matmul
-            if args.version == "2.1":
-                raise Exception("SAM2.1 not exported normal model.")
-            WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_'+model_type_versioned+'.onnx'
-            MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_'+model_type_versioned+'.onnx.prototxt'
-        else:
-            # 4dim matmul with batch 1
-            WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_'+model_type_versioned+'.opt.onnx'
-            MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_'+model_type_versioned+'.opt.onnx.prototxt'
+        # 4dim matmul with batch 1
+        WEIGHT_MEMORY_ATTENTION_L_PATH = 'memory_attention_'+model_type_versioned+'.opt.onnx'
+        MODEL_MEMORY_ATTENTION_L_PATH = 'memory_attention_'+model_type_versioned+'.opt.onnx.prototxt'
     else:
         # New models: 4D mask prompt encoder and 6D matmul memory attention with dynamic batch
         WEIGHT_PROMPT_ENCODER_L_PATH = 'prompt_encoder_with_mask_'+model_type_versioned+'.onnx'
