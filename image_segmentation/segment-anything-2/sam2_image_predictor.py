@@ -11,8 +11,20 @@ from typing import Optional
 from typing import Tuple
 
 class SAM2ImagePredictor:
-    def __init__(self, legacy=False):
+    def __init__(self, legacy=False, version="2", model_type="hiera_l"):
         self.legacy = legacy
+        self.no_mem_embed = self._load_no_mem_embed(version, model_type)
+
+    def _load_no_mem_embed(self, version, model_type):
+        """Load pretrained no_mem_embed from npz file."""
+        npz_path = os.path.join(os.path.dirname(__file__), "no_mem_embed.npz")
+        key = f"v{version}_{model_type}".replace("+", "plus")
+        if os.path.exists(npz_path):
+            data = np.load(npz_path)
+            if key in data:
+                return data[key].astype(np.float32)  # (1, 1, 256)
+        # Fallback to random initialization
+        return self.trunc_normal((1, 1, 256), std=0.02).astype(np.float32)
 
     def trunc_normal(self, size, std=0.02, a=-2, b=2):
         values = np.random.normal(loc=0., scale=std, size=size)
@@ -33,9 +45,7 @@ class SAM2ImagePredictor:
 
         _, vision_feats, _, _ = self._prepare_backbone_features(backbone_out)
         # Add no_mem_embed, which is added to the lowest rest feat. map during training on videos
-        hidden_dim = 256
-        no_mem_embed = self.trunc_normal((1, 1, hidden_dim), std=0.02).astype(np.float32)
-        vision_feats[-1] = vision_feats[-1] + no_mem_embed
+        vision_feats[-1] = vision_feats[-1] + self.no_mem_embed
 
         bb_feat_sizes = [
             (256, 256),

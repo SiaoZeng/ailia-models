@@ -205,7 +205,7 @@ def get_input_point():
 def recognize_from_image(image_encoder, prompt_encoder, mask_decoder):
     input_point, input_label, input_box = get_input_point()
 
-    image_predictor = SAM2ImagePredictor(args.legacy)
+    image_predictor = SAM2ImagePredictor(args.legacy, args.version, args.model_type)
 
     for image_path in args.input:
         image = cv2.imread(image_path)
@@ -267,6 +267,8 @@ def recognize_from_image(image_encoder, prompt_encoder, mask_decoder):
 def recognize_from_image_auto(image_encoder, prompt_encoder, mask_decoder):
     mask_generator = SAM2AutomaticMaskGenerator(
         legacy=args.legacy,
+        version=args.version,
+        model_type=args.model_type,
         points_per_side=args.points_per_side,
         points_per_batch=args.points_per_batch,
         pred_iou_thresh=args.pred_iou_thresh,

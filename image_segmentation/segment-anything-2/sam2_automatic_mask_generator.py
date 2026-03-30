@@ -65,13 +65,15 @@ class SAM2AutomaticMaskGenerator:
     def __init__(
         self,
         legacy=False,
+        version="2",
+        model_type="hiera_l",
         points_per_side=32,
         points_per_batch=64,
         pred_iou_thresh=0.8,
         stability_score_thresh=0.95,
         box_nms_thresh=0.7,
     ):
-        self.image_predictor = SAM2ImagePredictor(legacy)
+        self.image_predictor = SAM2ImagePredictor(legacy, version, model_type)
         self.points_per_side = points_per_side
         self.points_per_batch = points_per_batch
         self.pred_iou_thresh = pred_iou_thresh
