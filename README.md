@@ -14,7 +14,7 @@ The collection of pre-trained, state-of-the-art AI models.
 | ailia Speech / Voice / LLM / Tokenizer / Tracker | ✓ | − |
 | 400+ verified model library with sample code | ✓ | − |
 | Unity bindings and model collection | ✓ | △ |
-| Embedded SoC support (NonOS / RTOS / Linux) | ✓ | △ |
+| Non-OS / RTOS inference support | ✓ | △ |
 | Model‑specific optimization | ✓ | △ |
 
 △ = Supported but limited due to general-purpose implementation.
