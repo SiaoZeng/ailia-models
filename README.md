@@ -22,7 +22,7 @@ The collection of pre-trained, state-of-the-art AI models.
 
 △ = Supported but limited due to general-purpose implementation.
 
-Prototype with [ailia MODELS (Python)](https://github.com/ailia-ai/ailia-models), then deploy with [ailia MODELS Unity](https://github.com/ailia-ai/ailia-models-unity) or [ailia MODELS Kotlin](https://github.com/ailia-ai/ailia-models-kotlin).
+Prototype with [ailia MODELS (Python)](https://github.com/ailia-ai/ailia-models), then deploy with [ailia MODELS Unity](https://github.com/ailia-ai/ailia-models-unity), [ailia MODELS Kotlin](https://github.com/ailia-ai/ailia-models-kotlin), or [ailia MODELS Flutter](https://github.com/ailia-ai/ailia-models-flutter).
 
 # How to use
 
@@ -874,6 +874,7 @@ If you would like to try on your computer:
 # Other languages
 
 - [unity version](https://github.com/ailia-ai/ailia-models-unity)
+- [kotlin version](https://github.com/ailia-ai/ailia-models-kotlin)
 - [c++ version](https://github.com/ailia-ai/ailia-models-cpp)
 - [flutter version](https://github.com/ailia-ai/ailia-models-flutter)
 - [rust version](https://github.com/ailia-ai/ailia-models-rust)
