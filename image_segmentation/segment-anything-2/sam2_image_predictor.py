@@ -11,6 +11,9 @@ from typing import Optional
 from typing import Tuple
 
 class SAM2ImagePredictor:
+    def __init__(self, legacy=False):
+        self.legacy = legacy
+
     def trunc_normal(self, size, std=0.02, a=-2, b=2):
         values = np.random.normal(loc=0., scale=std, size=size)
         values = np.clip(values, a*std, b*std)
@@ -150,7 +153,10 @@ class SAM2ImagePredictor:
                 concat_points = (box_coords, box_labels.astype(np.int32))
 
         if mask_input is None:
-            mask_input_dummy = np.zeros((1, 256, 256), dtype=np.float32)
+            if self.legacy:
+                mask_input_dummy = np.zeros((1, 256, 256), dtype=np.float32)
+            else:
+                mask_input_dummy = np.zeros((1, 1, 256, 256), dtype=np.float32)
             masks_enable = np.array([0], dtype=np.int32)
         else:
             mask_input_dummy = mask_input
