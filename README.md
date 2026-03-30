@@ -4,7 +4,7 @@ The collection of pre-trained, state-of-the-art AI models.
 
 # About ailia SDK
 
-[ailia SDK](https://ailia.ai/en/sdk/) is a self-contained, cross-platform, high-speed inference SDK for AI. The ailia SDK provides a consistent C++ API across Windows, Mac, Linux, iOS, Android, Jetson, and Raspberry Pi platforms. It also supports Unity (C#), Python, Rust, Flutter(Dart) and JNI for efficient AI implementation. The ailia SDK makes extensive use of the GPU through Vulkan and Metal to enable accelerated computing.
+[ailia SDK](https://ailia.ai/en/sdk/) is a cross-platform, high-speed inference SDK for AI. It supports Windows, Mac, Linux, iOS, Android, Jetson, and Raspberry Pi with GPU acceleration via Vulkan and Metal. Bindings are available for C++, Python, Unity (C#), Kotlin, Rust, and Flutter.
 
 - [Contact us](https://www.ailia.ai/en-contact-product)
 - [Mail](mailto:contact@ailia.ai)
@@ -22,9 +22,7 @@ The collection of pre-trained, state-of-the-art AI models.
 
 △ = Supported but limited due to general-purpose implementation.
 
-ailia SDK is built in-house from the ground up, enabling device- and model-specific optimizations that general-purpose runtimes cannot easily provide—such as native Vulkan/Metal GPU backends and dedicated tuning for embedded SoCs.
-
-Beyond Python, ailia provides official libraries for Unity (C#), Kotlin, and C++ that cover the full pipeline from LLM tokenization to object tracking. You can prototype with [ailia MODELS (Python)](https://github.com/ailia-ai/ailia-models), then move to production using [ailia MODELS Unity](https://github.com/ailia-ai/ailia-models-unity) or [ailia MODELS Kotlin](https://github.com/ailia-ai/ailia-models-kotlin).
+Prototype with [ailia MODELS (Python)](https://github.com/ailia-ai/ailia-models), then deploy with [ailia MODELS Unity](https://github.com/ailia-ai/ailia-models-unity) or [ailia MODELS Kotlin](https://github.com/ailia-ai/ailia-models-kotlin).
 
 # How to use
 
