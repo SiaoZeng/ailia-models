@@ -17,8 +17,8 @@ class SAM2ImagePredictor:
 
     def _load_no_mem_embed(self, version, model_type):
         """Load pretrained no_mem_embed from npz file."""
-        npz_path = os.path.join(os.path.dirname(__file__), "no_mem_embed.npz")
-        key = f"v{version}_{model_type}".replace("+", "plus")
+        npz_path = os.path.join(os.path.dirname(__file__), "pretrained_weights.npz")
+        key = f"v{version}_{model_type}_no_mem_embed".replace("+", "plus")
         if os.path.exists(npz_path):
             data = np.load(npz_path)
             if key in data:
