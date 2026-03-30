@@ -387,7 +387,7 @@ def recognize_from_video(image_encoder, prompt_encoder, mask_decoder, memory_att
 
     predictor = SAM2VideoPredictor(args.onnx, args.benchmark, args.legacy)
 
-    inference_state = predictor.init_state(args.num_mask_mem, args.max_obj_ptrs_in_encoder, args.version)
+    inference_state = predictor.init_state(args.num_mask_mem, args.max_obj_ptrs_in_encoder, args.version, args.model_type)
     predictor.reset_state(inference_state)
 
     frame_shown = False
