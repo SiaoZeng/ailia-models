@@ -226,32 +226,18 @@ class SAM2VideoPredictor():
         import os
         npz_path = os.path.join(os.path.dirname(__file__), "pretrained_weights.npz")
         prefix = f"v{version}_{model_type}".replace("+", "plus")
-        if os.path.exists(npz_path):
-            data = np.load(npz_path)
-            maskmem_key = f"{prefix}_maskmem_tpos_enc"
-            embed_key = f"{prefix}_no_mem_embed"
-            pos_key = f"{prefix}_no_mem_pos_enc"
-            ptr_key = f"{prefix}_no_obj_ptr"
-            if all(k in data for k in [maskmem_key, embed_key, pos_key, ptr_key]):
-                maskmem = data[maskmem_key].astype(np.float32)
-                # maskmem_tpos_enc shape is (7, 1, 1, 64) but num_maskmem may differ
-                if maskmem.shape[0] >= num_maskmem:
-                    maskmem = maskmem[:num_maskmem]
-                else:
-                    pad = trunc_normal((num_maskmem - maskmem.shape[0], 1, 1, mem_dim), std=0.02)
-                    maskmem = np.concatenate([maskmem, pad], axis=0)
-                return (
-                    maskmem,
-                    data[embed_key].astype(np.float32),
-                    data[pos_key].astype(np.float32),
-                    data[ptr_key].astype(np.float32),
-                )
-        # Fallback to random initialization
+        data = np.load(npz_path)
+        maskmem = data[f"{prefix}_maskmem_tpos_enc"].astype(np.float32)
+        # maskmem_tpos_enc shape is (7, 1, 1, 64) but num_maskmem may differ
+        if maskmem.shape[0] >= num_maskmem:
+            maskmem = maskmem[:num_maskmem]
+        else:
+            maskmem = np.concatenate([maskmem, np.zeros((num_maskmem - maskmem.shape[0], 1, 1, mem_dim), dtype=np.float32)], axis=0)
         return (
-            trunc_normal((num_maskmem, 1, 1, mem_dim), std=0.02),
-            trunc_normal((1, 1, hidden_dim), std=0.02),
-            trunc_normal((1, 1, hidden_dim), std=0.02),
-            trunc_normal((1, hidden_dim), std=0.02),
+            maskmem,
+            data[f"{prefix}_no_mem_embed"].astype(np.float32),
+            data[f"{prefix}_no_mem_pos_enc"].astype(np.float32),
+            data[f"{prefix}_no_obj_ptr"].astype(np.float32),
         )
 
     def append_image(self,

@@ -19,17 +19,8 @@ class SAM2ImagePredictor:
         """Load pretrained no_mem_embed from npz file."""
         npz_path = os.path.join(os.path.dirname(__file__), "pretrained_weights.npz")
         key = f"v{version}_{model_type}_no_mem_embed".replace("+", "plus")
-        if os.path.exists(npz_path):
-            data = np.load(npz_path)
-            if key in data:
-                return data[key].astype(np.float32)  # (1, 1, 256)
-        # Fallback to random initialization
-        return self.trunc_normal((1, 1, 256), std=0.02).astype(np.float32)
-
-    def trunc_normal(self, size, std=0.02, a=-2, b=2):
-        values = np.random.normal(loc=0., scale=std, size=size)
-        values = np.clip(values, a*std, b*std)
-        return values
+        data = np.load(npz_path)
+        return data[key].astype(np.float32)  # (1, 1, 256)
 
     def set_image(self, image, image_encoder, onnx):
         image = np.expand_dims(image, axis=0).astype(np.float32)
