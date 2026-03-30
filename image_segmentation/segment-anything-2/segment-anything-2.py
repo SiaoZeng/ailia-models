@@ -523,6 +523,9 @@ def main():
         else:
             obj_ptr_tpos_proj = None
 
+    if args.auto and args.legacy:
+        raise RuntimeError("--auto requires dynamic batch support. Cannot be used with --legacy.")
+
     if args.video is not None:
         recognize_from_video(image_encoder, prompt_encoder, mask_decoder, memory_attention, memory_encoder, mlp, obj_ptr_tpos_proj)
     elif args.auto:
