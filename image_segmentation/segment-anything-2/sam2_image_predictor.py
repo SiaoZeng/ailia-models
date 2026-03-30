@@ -126,7 +126,7 @@ class SAM2ImagePredictor:
                 box, orig_hw=orig_hw
             )  # Bx2x2
         if mask_logits is not None:
-            mask_input = mask_input.astype(np.float32)
+            mask_input = mask_logits.astype(np.float32)
             if len(mask_input.shape) == 3:
                 mask_input = mask_input[None, :, :, :]
         return mask_input, unnorm_coords, labels, unnorm_box

@@ -50,6 +50,10 @@ parser.add_argument(
     help='Box coordinate specified by x1,y1,x2,y2.'
 )
 parser.add_argument(
+    '--mask', type=str, default=None,
+    help='Mask image path (grayscale, white=foreground) for mask prompt input.'
+)
+parser.add_argument(
     '--num_mask_mem', type=int, default=7, choices=(0, 1, 2, 3, 4, 5, 6, 7),
     help='Number of mask mem. (default 1 input frame + 6 previous frames)'
 )
@@ -202,8 +206,30 @@ def get_input_point():
     return input_point, input_label, input_box
 
 
+def load_mask_input(mask_path):
+    """Load a mask image and convert to mask logits for prompt encoder input."""
+    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+    if mask is None:
+        raise FileNotFoundError(f"Mask image not found: {mask_path}")
+    # Resize to prompt encoder mask input size (256x256)
+    mask = cv2.resize(mask, (256, 256), interpolation=cv2.INTER_LINEAR)
+    # Convert to logits: foreground (>128) -> positive, background -> negative
+    mask_logits = np.where(mask > 128, 10.0, -10.0).astype(np.float32)
+    # Shape: [1, 256, 256]
+    mask_logits = mask_logits[None, :, :]
+    return mask_logits
+
+
 def recognize_from_image(image_encoder, prompt_encoder, mask_decoder):
     input_point, input_label, input_box = get_input_point()
+
+    # Load mask input if specified
+    mask_input = None
+    if args.mask is not None:
+        if args.legacy:
+            raise RuntimeError("--mask requires new prompt_encoder model. Cannot be used with --legacy.")
+        mask_input = load_mask_input(args.mask)
+        logger.info(f'Mask prompt loaded from: {args.mask}')
 
     image_predictor = SAM2ImagePredictor(args.legacy, args.version, args.model_type)
 
@@ -225,6 +251,7 @@ def recognize_from_image(image_encoder, prompt_encoder, mask_decoder):
                     point_coords=input_point,
                     point_labels=input_label,
                     box=input_box,
+                    mask_input=mask_input,
                     prompt_encoder=prompt_encoder,
                     mask_decoder=mask_decoder,
                     onnx=args.onnx
@@ -246,6 +273,7 @@ def recognize_from_image(image_encoder, prompt_encoder, mask_decoder):
                 point_coords=input_point,
                 point_labels=input_label,
                 box=input_box,
+                mask_input=mask_input,
                 prompt_encoder=prompt_encoder,
                 mask_decoder=mask_decoder,
                 onnx=args.onnx
