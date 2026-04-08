@@ -64,7 +64,7 @@ File: `model/dinov2/layers/rope.py` class `PositionGetter.__call__`
 
 ### Patch 2: RoPE frequency components (rope.py)
 
-`int(positions.max())` is a data-dependent conversion that becomes a constant. Use a fixed upper bound (1024, supporting up to 14336px images) instead. Also remove dict caching from `_compute_frequency_components`, and replace `torch.cat((angles, angles), dim=-1)` with `angles.repeat(1, 2)` (ailia SDK does not support Concat with the same tensor as both inputs).
+`int(positions.max())` is a data-dependent conversion that becomes a constant. Use `positions.shape[1]` (= H_patches*W_patches, always >= max(H_patches, W_patches)) as a dynamic upper bound instead. Also remove dict caching from `_compute_frequency_components`, and replace `torch.cat((angles, angles), dim=-1)` with `angles.repeat(1, 2)` (ailia SDK does not support Concat with the same tensor as both inputs).
 
 File: `model/dinov2/layers/rope.py` class `RotaryPositionEmbedding2D`
 
@@ -100,7 +100,7 @@ File: `model/dinov2/layers/rope.py` class `RotaryPositionEmbedding2D`
         max_position = int(positions.max()) + 1
 
 # After (forward)
-        max_position = 1024
+        max_position = positions.shape[1]
 ```
 
 ---
