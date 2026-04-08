@@ -28,21 +28,49 @@ Exported ONNX models support dynamic shapes for batch, height, and width dimensi
 
 `depth_anything_3` package uses `torch.cartesian_prod` in `PositionGetter` (`depth_anything_3/model/dinov2/layers/rope.py`), which is not supported by the ONNX exporter. Before running the export, this must be replaced with an equivalent using `torch.meshgrid` + `torch.stack`.
 
-Apply the following patch to the installed package before export:
+Apply the following patch to the installed package before export.
+
+File to patch: `<python_site_packages>/depth_anything_3/model/dinov2/layers/rope.py`
+
+### Before (original code)
 
 ```python
-# In depth_anything_3/model/dinov2/layers/rope.py
-# PositionGetter.__call__()
+class PositionGetter:
+    def __init__(self):
+        self.position_cache: Dict[Tuple[int, int], torch.Tensor] = {}
 
-# Before (not supported by ONNX):
-positions = torch.cartesian_prod(y_coords, x_coords)
+    def __call__(
+        self, batch_size: int, height: int, width: int, device: torch.device
+    ) -> torch.Tensor:
+        if (height, width) not in self.position_cache:
+            y_coords = torch.arange(height, device=device)
+            x_coords = torch.arange(width, device=device)
+            positions = torch.cartesian_prod(y_coords, x_coords)
+            self.position_cache[height, width] = positions
 
-# After (ONNX-compatible):
-grid_y, grid_x = torch.meshgrid(y_coords, x_coords, indexing='ij')
-positions = torch.stack([grid_y.flatten(), grid_x.flatten()], dim=-1)
+        cached_positions = self.position_cache[height, width]
+        return cached_positions.view(1, height * width, 2).expand(batch_size, -1, -1).clone()
 ```
 
-The file to patch is located at:
+### After (ONNX-compatible)
+
+```python
+class PositionGetter:
+    def __init__(self):
+        self.position_cache: Dict[Tuple[int, int], torch.Tensor] = {}
+
+    def __call__(
+        self, batch_size: int, height: int, width: int, device: torch.device
+    ) -> torch.Tensor:
+        if (height, width) not in self.position_cache:
+            y_coords = torch.arange(height, device=device)
+            x_coords = torch.arange(width, device=device)
+            grid_y, grid_x = torch.meshgrid(y_coords, x_coords, indexing='ij')
+            positions = torch.stack([grid_y.flatten(), grid_x.flatten()], dim=-1)
+            self.position_cache[height, width] = positions
+
+        cached_positions = self.position_cache[height, width]
+        return cached_positions.view(1, height * width, 2).expand(batch_size, -1, -1).clone()
 ```
-<python_site_packages>/depth_anything_3/model/dinov2/layers/rope.py
-```
+
+`torch.cartesian_prod` is not supported by the ONNX opset. `torch.meshgrid` + `torch.stack` produces the same (y, x) coordinate pairs and is fully ONNX-compatible.
