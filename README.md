@@ -34,9 +34,12 @@ If you would like to try on your computer:
 [ailia-models wiki](https://deepwiki.com/ailia-ai/ailia-models)
 
 # Supported models
-403 models as of March 12, 2026
+403 models as of March 30, 2026
 
 # Latest update
+- 2026.03.30 Add auto mode for segment-anything-v2
+- 2026.03.27 Add gpt-sovits-v2pro-int4, whisper-int4, sensevoice-int4 (currently required ORT)
+- 2026.03.23 Add qwen2vl-int4 (currently required ORT)
 - 2026.03.12 Add depth_anything_v3, depth_pro
 - 2026.03.06 Add depth_anything_v2
 - 2026.03.04 Add gpt-sovits-v2-pro, bevformer, uniad
