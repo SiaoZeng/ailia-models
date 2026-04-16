@@ -74,21 +74,39 @@ else:
     
 
 WEIGHT_PATH_SPEAKER_ENCODER  = f"qwen3_tts_speaker_encoder_{parameter_num}.onnx"
+WEIGHT_PATH_SPEAKER_ENCODER_DATA  = f"qwen3_tts_speaker_encoder_{parameter_num}.onnx.data"
 MODEL_PATH_SPEAKER_ENCODER   = f"qwen3_tts_speaker_encoder_{parameter_num}.prototxt"
 WEIGHT_PATH_TALKER_IO        = f"qwen3_tts_talker_io_units_{parameter_num}.onnx"
+WEIGHT_PATH_TALKER_IO_DATA   = f"qwen3_tts_talker_io_units_{parameter_num}.onnx.data"
 MODEL_PATH_TALKER_IO         = f"qwen3_tts_talker_io_units_{parameter_num}.prototxt"
 WEIGHT_PATH_TALKER_DECODER   = f"qwen3_tts_talker_decoder_{parameter_num}.onnx"   # ★ full 24-layer
 MODEL_PATH_TALKER_DECODER    = f"qwen3_tts_talker_decoder_{parameter_num}.prototxt"
 WEIGHT_PATH_TOKENIZER_ENCODER = f"qwen3_tts_tokenizer_encoder_{parameter_num}.onnx"
 MODEL_PATH_TOKENIZER_ENCODER  = f"qwen3_tts_tokenizer_encoder_{parameter_num}.prototxt"
 WEIGHT_PATH_TOKENIZER_DECODER = f"qwen3_tts_tokenizer_decoder_{parameter_num}.onnx"
+WEIGHT_PATH_TOKENIZER_DECODER_DATA = f"qwen3_tts_tokenizer_decoder_{parameter_num}.onnx.data"
 MODEL_PATH_TOKENIZER_DECODER  = f"qwen3_tts_tokenizer_decoder_{parameter_num}.prototxt"
 WEIGHT_PATH_TEXT_EMB          = f"qwen3_tts_text_embedding_{parameter_num}.npy"
 WEIGHT_PATH_CODEC_EMB         = f"qwen3_tts_codec_embeddings_{parameter_num}.npy"
 WEIGHT_PATH_SUBTALKER_DECODER   = f"qwen3_tts_subtalker_decoder_{parameter_num}.onnx"
 WEIGHT_PATH_SUBTALKER_LM_HEADS  = f"qwen3_tts_subtalker_lm_heads_{parameter_num}.npy"
 WEIGHT_PATH_SUBTALKER_CODEC_EMB = f"qwen3_tts_subtalker_codec_emb_{parameter_num}.npy"
- 
+onnx_list = [
+    WEIGHT_PATH_SPEAKER_ENCODER,
+    WEIGHT_PATH_TALKER_IO,
+    WEIGHT_PATH_TALKER_DECODER,
+    WEIGHT_PATH_TOKENIZER_DECODER,
+    WEIGHT_PATH_SUBTALKER_DECODER,
+]
+file_list = [
+    WEIGHT_PATH_TEXT_EMB,
+    WEIGHT_PATH_CODEC_EMB,
+    WEIGHT_PATH_SUBTALKER_LM_HEADS,
+    WEIGHT_PATH_SUBTALKER_CODEC_EMB,
+    WEIGHT_PATH_SPEAKER_ENCODER_DATA,
+    WEIGHT_PATH_TALKER_IO_DATA,
+    WEIGHT_PATH_TOKENIZER_DECODER_DATA
+]
 
 #Parameters reqired to create mell spectograms
 sampling_rate = 24000
@@ -676,6 +694,11 @@ class Qwen3TTS:
         return final_waveform
     
 def main():
+    for onnx in onnx_list:
+        check_and_download_models(onnx, None, REMOTE_PATH)
+    for f in file_list:
+        check_and_download_models(f, REMOTE_PATH) 
+
     memory_mode = ailia.get_memory_mode(
     reduce_constant=True,  
     ignore_input_with_initializer=True, 
