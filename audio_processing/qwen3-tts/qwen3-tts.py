@@ -21,7 +21,7 @@ from typing import Any, List, Optional
 # import original modules
 sys.path.append('../../util')
 from arg_utils import get_base_parser, update_parser, get_savepath  # noqa: E402
-from model_utils import check_and_download_models, check_and_download_files  # noqa: E402
+from model_utils import check_and_download_models, check_and_download_file  # noqa: E402
 
 # logger
 from logging import getLogger   # noqa: E402
@@ -697,7 +697,7 @@ def main():
     for onnx in onnx_list:
         check_and_download_models(onnx, None, REMOTE_PATH)
     for f in file_list:
-        check_and_download_files(f, REMOTE_PATH) 
+        check_and_download_file(f, REMOTE_PATH) 
 
     memory_mode = ailia.get_memory_mode(
     reduce_constant=True,  
