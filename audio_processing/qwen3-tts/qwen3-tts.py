@@ -32,7 +32,7 @@ logger = getLogger(__name__)
 # ======================
 
 SAVE_WAV_PATH = 'output.wav'
-INPUT_WAV_PATH = None
+INPUT_WAV_PATH = "clone_2.wav"
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/qwen3-tts/"
 
 
@@ -686,7 +686,7 @@ def main():
     tts_engine = Qwen3TTS(memory_mode)
     
     # 2. 検証用データの指定
-    ref_audio = "clone_2.wav" # ローカルにダウンロード済みと想定
+    ref_audio = INPUT_WAV_PATH # ローカルにダウンロード済みと想定
     ref_text = "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
     text = "Good one. Okay, fine, I'm just gonna leave this sock monkey here. Goodbye."
     
