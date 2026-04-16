@@ -105,7 +105,8 @@ file_list = [
     WEIGHT_PATH_SUBTALKER_CODEC_EMB,
     WEIGHT_PATH_SPEAKER_ENCODER_DATA,
     WEIGHT_PATH_TALKER_IO_DATA,
-    WEIGHT_PATH_TOKENIZER_DECODER_DATA
+    WEIGHT_PATH_TOKENIZER_DECODER_DATA,
+    "config.json"
 ]
 
 #Parameters reqired to create mell spectograms
@@ -259,7 +260,6 @@ class Qwen3TTS:
 
     def __init__(self, memory_mode):
         self.cfg = load_qwen_config("config.json")
-
         self.speaker_encoder   = ailia.Net(stream=None, weight=WEIGHT_PATH_SPEAKER_ENCODER,   memory_mode=memory_mode)
         self.talker_io         = ailia.Net(stream=None, weight=WEIGHT_PATH_TALKER_IO,         memory_mode=memory_mode)
         self.talker_decoder    = ailia.Net(stream=None, weight=WEIGHT_PATH_TALKER_DECODER,    memory_mode=memory_mode)  # ★ full 24-layer
