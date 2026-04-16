@@ -89,14 +89,16 @@ MODEL_PATH_TOKENIZER_DECODER  = f"qwen3_tts_tokenizer_decoder_{parameter_num}.pr
 WEIGHT_PATH_TEXT_EMB          = f"qwen3_tts_text_embedding_{parameter_num}.npy"
 WEIGHT_PATH_CODEC_EMB         = f"qwen3_tts_codec_embeddings_{parameter_num}.npy"
 WEIGHT_PATH_SUBTALKER_DECODER   = f"qwen3_tts_subtalker_decoder_{parameter_num}.onnx"
+MODEL_PATH_SUBTALKER_DECODER   = f"qwen3_tts_subtalker_decoder_{parameter_num}.onnx"
 WEIGHT_PATH_SUBTALKER_LM_HEADS  = f"qwen3_tts_subtalker_lm_heads_{parameter_num}.npy"
 WEIGHT_PATH_SUBTALKER_CODEC_EMB = f"qwen3_tts_subtalker_codec_emb_{parameter_num}.npy"
 onnx_list = [
-    WEIGHT_PATH_SPEAKER_ENCODER,
-    WEIGHT_PATH_TALKER_IO,
-    WEIGHT_PATH_TALKER_DECODER,
-    WEIGHT_PATH_TOKENIZER_DECODER,
-    WEIGHT_PATH_SUBTALKER_DECODER,
+    (WEIGHT_PATH_SPEAKER_ENCODER,MODEL_PATH_SPEAKER_ENCODER),
+    (WEIGHT_PATH_TALKER_IO,MODEL_PATH_TALKER_IO),
+    (WEIGHT_PATH_TALKER_DECODER,MODEL_PATH_TALKER_DECODER),
+    (WEIGHT_PATH_TOKENIZER_ENCODER,MODEL_PATH_TOKENIZER_ENCODER)
+    (WEIGHT_PATH_TOKENIZER_DECODER,MODEL_PATH_TOKENIZER_DECODER),
+    (WEIGHT_PATH_SUBTALKER_DECODER,MODEL_PATH_SUBTALKER_DECODER),
 ]
 file_list = [
     WEIGHT_PATH_TEXT_EMB,
@@ -260,15 +262,15 @@ class Qwen3TTS:
 
     def __init__(self, memory_mode):
         self.cfg = load_qwen_config("config.json")
-        self.speaker_encoder   = ailia.Net(stream=None, weight=WEIGHT_PATH_SPEAKER_ENCODER,   memory_mode=memory_mode)
-        self.talker_io         = ailia.Net(stream=None, weight=WEIGHT_PATH_TALKER_IO,         memory_mode=memory_mode)
-        self.talker_decoder    = ailia.Net(stream=None, weight=WEIGHT_PATH_TALKER_DECODER,    memory_mode=memory_mode)  # ★ full 24-layer
-        self.tokenizer_encoder = ailia.Net(stream=None, weight=WEIGHT_PATH_TOKENIZER_ENCODER, memory_mode=memory_mode)
-        self.tokenizer_decoder = ailia.Net(stream=None, weight=WEIGHT_PATH_TOKENIZER_DECODER, memory_mode=memory_mode)
+        self.speaker_encoder   = ailia.Net(stream=MODEL_PATH_SPEAKER_ENCODER, weight=WEIGHT_PATH_SPEAKER_ENCODER,   memory_mode=memory_mode)
+        self.talker_io         = ailia.Net(stream=MODEL_PATH_TALKER_IO, weight=WEIGHT_PATH_TALKER_IO,         memory_mode=memory_mode)
+        self.talker_decoder    = ailia.Net(stream=MODEL_PATH_TALKER_DECODER, weight=WEIGHT_PATH_TALKER_DECODER,    memory_mode=memory_mode)  # ★ full 24-layer
+        self.tokenizer_encoder = ailia.Net(stream=MODEL_PATH_TOKENIZER_ENCODER, weight=WEIGHT_PATH_TOKENIZER_ENCODER, memory_mode=memory_mode)
+        self.tokenizer_decoder = ailia.Net(stream=MODEL_PATH_TOKENIZER_DECODER, weight=WEIGHT_PATH_TOKENIZER_DECODER, memory_mode=memory_mode)
         self.text_emb_weight   = np.load(WEIGHT_PATH_TEXT_EMB)
         self.codec_emb_weight  = np.load(WEIGHT_PATH_CODEC_EMB)
         self.text_tokenizer    = AutoTokenizer.from_pretrained('./tokenizer')
-        self.subtalker_decoder  = ailia.Net(stream=None, weight=WEIGHT_PATH_SUBTALKER_DECODER, memory_mode=memory_mode)
+        self.subtalker_decoder  = ailia.Net(stream=MODEL_PATH_SUBTALKER_DECODER, weight=WEIGHT_PATH_SUBTALKER_DECODER, memory_mode=memory_mode)
         self.text_emb_weight    = np.load(WEIGHT_PATH_TEXT_EMB)
         self.codec_emb_weight   = np.load(WEIGHT_PATH_CODEC_EMB)
         self.subtalker_lm_heads  = np.load(WEIGHT_PATH_SUBTALKER_LM_HEADS)   # [15, 2048, 1024]
@@ -694,8 +696,8 @@ class Qwen3TTS:
         return final_waveform
     
 def main():
-    for onnx in onnx_list:
-        check_and_download_models(onnx, None, REMOTE_PATH)
+    for onnx, prototxt in onnx_list:
+        check_and_download_models(onnx, prototxt, REMOTE_PATH)
     for f in file_list:
         check_and_download_file(f, REMOTE_PATH) 
 
