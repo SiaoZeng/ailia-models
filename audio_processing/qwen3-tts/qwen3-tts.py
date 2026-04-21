@@ -121,8 +121,7 @@ file_list = [
     WEIGHT_PATH_SUBTALKER_CODEC_EMB,
     WEIGHT_PATH_SPEAKER_ENCODER_DATA,
     WEIGHT_PATH_TALKER_IO_DATA,
-    WEIGHT_PATH_TOKENIZER_DECODER_DATA,
-    "config.json"
+    WEIGHT_PATH_TOKENIZER_DECODER_DATA
 ]
 
 #Parameters reqired to create mell spectograms
