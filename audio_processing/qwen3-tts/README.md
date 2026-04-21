@@ -10,6 +10,15 @@
 
 - Synthesized audio (WAV file)
 
+## Requirements
+- Python 3.12 or higher
+- [ailia SDK](https://ailia.jp/sdk/) (Version 1.6.1 or higher recommended)
+
+Install the required Python libraries:
+```bash
+pip install -r requirements.txt
+```
+
 ## Usage
 
 This model supports **Voice Clone (Zero-shot Voice Conversion)** by default. You need to provide a text to synthesize, a reference audio file of the target speaker, and its corresponding text transcript.
