@@ -21,7 +21,7 @@ from typing import Any, List, Optional
 # import original modules
 sys.path.append('../../util')
 from arg_utils import get_base_parser, update_parser, get_savepath  # noqa: E402
-from model_utils import check_and_download_models, check_and_download_file  # noqa: E402
+from model_utils import check_and_download_models  # noqa: E402
 
 # logger
 from logging import getLogger   # noqa: E402
@@ -72,7 +72,7 @@ parser.add_argument(
 parser.add_argument(
     '-p', '--parameter_num',
     default='0.6B',
-    help='[0.6B, 1.8B]' # 1.8B未対応
+    help='[0.6B, 1.8B]'
 )
 args = update_parser(parser, check_input_type=False)
 
@@ -89,7 +89,7 @@ else:
 
 WEIGHT_PATH_SPEAKER_ENCODER  = f"qwen3_tts_speaker_encoder_{parameter_num}.onnx"
 WEIGHT_PATH_SPEAKER_ENCODER_DATA  = f"qwen3_tts_speaker_encoder_{parameter_num}.onnx.data"
-MODEL_PATH_SPEAKER_ENCODER   = None # WEIGHT_PATH_SPEAKER_ENCODER + ".prototxt"
+MODEL_PATH_SPEAKER_ENCODER   = WEIGHT_PATH_SPEAKER_ENCODER + ".prototxt"
 WEIGHT_PATH_TALKER_IO        = f"qwen3_tts_talker_io_units_{parameter_num}.onnx"
 WEIGHT_PATH_TALKER_IO_DATA   = f"qwen3_tts_talker_io_units_{parameter_num}.onnx.data"
 MODEL_PATH_TALKER_IO         =  WEIGHT_PATH_TALKER_IO + ".prototxt"
@@ -99,7 +99,7 @@ WEIGHT_PATH_TOKENIZER_ENCODER = f"qwen3_tts_tokenizer_encoder_{parameter_num}.on
 MODEL_PATH_TOKENIZER_ENCODER  = WEIGHT_PATH_TOKENIZER_ENCODER + ".prototxt"
 WEIGHT_PATH_TOKENIZER_DECODER = f"qwen3_tts_tokenizer_decoder_{parameter_num}.onnx"
 WEIGHT_PATH_TOKENIZER_DECODER_DATA = f"qwen3_tts_tokenizer_decoder_{parameter_num}.onnx.data"
-MODEL_PATH_TOKENIZER_DECODER  = None # WEIGHT_PATH_TOKENIZER_DECODER + ".prototxt"
+MODEL_PATH_TOKENIZER_DECODER  = WEIGHT_PATH_TOKENIZER_DECODER + ".prototxt"
 WEIGHT_PATH_TEXT_EMB          = f"qwen3_tts_text_embedding_{parameter_num}.npy"
 WEIGHT_PATH_CODEC_EMB         = f"qwen3_tts_codec_embeddings_{parameter_num}.npy"
 WEIGHT_PATH_SUBTALKER_DECODER   = f"qwen3_tts_subtalker_decoder_{parameter_num}.onnx"
@@ -202,13 +202,12 @@ def get_mel(PATH_TO_MELL):
 
 def check_input_type():
     if args.input:
-        if args.inputType.split(".")[0] in ["npy", "wav"]:
-            if args.inputType.split(".")[0] == "npy":
+   
+        if args.input.split(".")[0] in ["npy", "wav"]:
+            if args.input.split(".")[0] == "npy":
                 return "numpy"    
             else:
                 return"wav"   
-        else:
-            return print("Unsupported input")
     else:
         return args.inputType
     
@@ -226,7 +225,7 @@ def load_qwen_config(config_path="config.json"):
         "assistant_id":       raw["assistant_token_id"],  # 77091
         # ---- talker_config (codec tokenizer 側) ----
         "codec_bos_id":       tc["codec_bos_id"],         # 2149
-        "codec_eos_id":       tc["codec_eos_token_id"],   # 2150
+        "codec_eos_id":       tc["codec_eos_token_id"],   # 2150  ← 旧コードの 4198 は誤り
         "codec_pad_id":       tc["codec_pad_id"],         # 2148
         "codec_nothink_id":   tc["codec_nothink_id"],     # 2155
         "codec_think_bos_id": tc["codec_think_bos_id"],   # 2156
@@ -240,12 +239,12 @@ def load_qwen_config(config_path="config.json"):
     }
 @dataclass
 class VoiceClonePromptItem:
+    # 確実にコンストラクタが生成されるように型を明示
     ref_code: Any 
     ref_spk_embedding: Any
     x_vector_only_mode: bool
     icl_mode: bool
     ref_text: str = ""
-
 
 def _sample_token(logits_1d: np.ndarray, temperature: float = 0.9, top_k: int = 50) -> int:
     """temperature + top-k サンプリング。temperature=0 で greedy。"""
@@ -401,8 +400,10 @@ class Qwen3TTS:
  
         ref_T = ref_code.shape[1]
         codec_sum_emb = np.zeros((ref_T, 1024), dtype=np.float32)
-        # Group 0: main talker embedding (codec_emb_weight[0])
-        # Groups 1-15: subtalker embedding (subtalker_codec_emb[i-1])
+        # ★ Group 0: main talker embedding (codec_emb_weight[0])
+        # ★ Groups 1-15: subtalker embedding (subtalker_codec_emb[i-1])
+        #   PyTorch: i==0 → talker.get_input_embeddings()
+        #            i>0  → code_predictor.get_input_embeddings()[i-1]
         codec_sum_emb += self.codec_emb_weight[0, ref_code[0, :], :]
         for i in range(1, 16):
             codec_sum_emb += self.subtalker_codec_emb[i - 1, ref_code[i, :], :]
@@ -416,10 +417,9 @@ class Qwen3TTS:
         text_lens  = text_proj.shape[1]
         codec_lens = codec_final_emb.shape[1]
  
-        print(f"[ICL] text_lens={text_lens}, codec_lens={codec_lens}")
  
         if codec_lens >= text_lens:
-            # codec の方が長い → テキストをパディング
+            # 通常ケース: codec の方が長い → テキストをパディング
             num_pads  = codec_lens - text_lens
             if num_pads > 0:
                 pads      = np.tile(tts_pad_embed, (1, num_pads, 1))
@@ -427,10 +427,11 @@ class Qwen3TTS:
             icl_embed            = text_proj + codec_final_emb   # [1, codec_lens, 1024]
             trailing_text_hidden = tts_pad_embed                  # [1, 1, 1024] → 全ステップ tts_pad_embed
         else:
-            # text の方が長い → codec 長でカット、余りをtrailing に
+            # 稀ケース: text の方が長い → codec 長でカット、余りをtrailing に
             icl_embed            = text_proj[:, :codec_lens, :] + codec_final_emb
             trailing_text_hidden = text_proj[:, codec_lens:, :]   # オーバーフロー分
-
+ 
+ 
         return icl_embed, trailing_text_hidden
 
     # ------------------------------------------------------------------
@@ -438,12 +439,19 @@ class Qwen3TTS:
     # ------------------------------------------------------------------
     def predict(self, text, ref_audio=None, ref_text=None):
         cfg = self.cfg   # 短縮エイリアス
+
         # ---- 参照音声 ----
         if ref_audio is not None:
             inputTypes = check_input_type()
             if inputTypes != "numpy":
                 wav, sr = load_wav(ref_audio)
                 wav = np.expand_dims(wav, axis=0)
+                mel_outputs = mel_spectrogram(wav, n_fft, num_mels, sampling_rate,
+                                               hop_size, win_size, fmin, fmax)
+            else:
+                mel_outputs = get_mel(ref_audio)
+
+            speaker_vec = self.speaker_encoder.run([mel_outputs])[0]
 
             wav, sr   = librosa.load(ref_audio, sr=24000, mono=True)
             wav_input = wav[np.newaxis, np.newaxis, :].astype(np.float32)
@@ -452,33 +460,44 @@ class Qwen3TTS:
             ref_code = np.squeeze(ref_code, axis=0)  # [16, T]
 
         if ref_text is not None:
-            with open(ref_text, "r", encoding="utf-8") as f:
-                wav_text = f.read()
-            wav_text_formatted = f"<|im_start|>assistant\n{wav_text}<|im_end|>\n"
-            ref_ids = np.array(self.text_tokenizer.encode(wav_text_formatted),
+            ref_text_formatted = f"<|im_start|>assistant\n{ref_text}<|im_end|>\n"
+            ref_ids = np.array(self.text_tokenizer.encode(ref_text_formatted),
                                dtype=np.int64)[np.newaxis, :]
 
+        # ---- テキスト投影 ----
+        prompt_text = "<|im_start|>assistant\n"
+        body_text   = f"{text}<|im_end|>\n<|im_start|>assistant\n"
+        all_text_ids = self.text_tokenizer.encode(prompt_text) + self.text_tokenizer.encode(body_text)
+        all_text_emb = np.expand_dims(self.text_emb_weight[all_text_ids], axis=0).astype(np.float32)
+
+        self.talker_io.set_input_blob_shape(all_text_emb.shape, 0)
+        self.talker_io.set_input_blob_shape((1, 1, 1024), 1)
+        projected_text = self.talker_io.run(
+            [all_text_emb, np.zeros((1, 1, 1024), dtype=np.float32)]
+        )[0]
+
         # ---- voice clone prompt ----
-        voice_clone_prompt = self.create_voice_clone_prompt(ref_audio, wav_text)[0]
+        voice_clone_prompt = self.create_voice_clone_prompt(ref_audio, ref_text)[0]
         spk_emb = voice_clone_prompt.ref_spk_embedding
 
         # ---- special embed (tts bos/eos/pad) ----
-        special_ids  = [cfg["tts_bos_id"], cfg["tts_eos_id"], cfg["tts_pad_id"]]
+        special_ids  = [cfg["tts_bos_id"], cfg["tts_eos_id"], cfg["tts_pad_id"]]   # ★ config
         special_embs = self.text_emb_weight[special_ids][np.newaxis, :, :].astype(np.float32)
         self.talker_io.set_input_blob_shape(special_embs.shape, 0)
         self.talker_io.set_input_blob_shape((1, 1, 1024), 1)
         projected_specials = self.talker_io.run(
             [special_embs, np.zeros((1, 1, 1024), dtype=np.float32)]
         )[0]
+        tts_bos_embed = projected_specials[:, 0:1, :]
         tts_eos_embed = projected_specials[:, 1:2, :]
         tts_pad_embed = projected_specials[:, 2:3, :]
 
         # ---- codec tag 埋め込み ----
         tag_ids_0 = [cfg["codec_nothink_id"],   # 2155
                      cfg["codec_think_bos_id"],  # 2156
-                     cfg["codec_think_eos_id"]]  # 2157
+                     cfg["codec_think_eos_id"]]  # 2157  ← ★ config
         tag_ids_1 = [cfg["codec_pad_id"],        # 2148
-                     cfg["codec_bos_id"]]         # 2149
+                     cfg["codec_bos_id"]]         # 2149  ← ★ config
         tag_part0   = self.codec_emb_weight[0][tag_ids_0]          # [3, 1024]
         tag_part_spk = spk_emb[np.newaxis, :]                      # [1, 1024]
         tag_part1   = self.codec_emb_weight[0][tag_ids_1]          # [2, 1024]
@@ -487,14 +506,14 @@ class Qwen3TTS:
         )  # [1, 6, 1024]
 
         # ---- role 投影 ----
-        role_ids  = [cfg["im_start_id"], cfg["assistant_id"], 198]  # 198=\n
+        role_ids  = [cfg["im_start_id"], cfg["assistant_id"], 198]  # ★ config (198=\n は固定)
         role_proj = self.talker_io.run(
             [self.text_emb_weight[role_ids][np.newaxis, :].astype(np.float32),
              np.zeros((1, 1, 1024), dtype=np.float32)]
         )[0]  # [1, 3, 1024]
 
         # ---- tag 投影 ----
-        tag_base_ids  = [cfg["tts_pad_id"]] * 4 + [cfg["tts_bos_id"]] 
+        tag_base_ids  = [cfg["tts_pad_id"]] * 4 + [cfg["tts_bos_id"]]  # ★ config
         tag_base_proj = self.talker_io.run(
             [self.text_emb_weight[tag_base_ids][np.newaxis, :].astype(np.float32),
              np.zeros((1, 1, 1024), dtype=np.float32)]
@@ -502,11 +521,6 @@ class Qwen3TTS:
         tags_combined = tag_base_proj + codec_tag_emb[:, :-1, :]  # [1, 5, 1024]
 
         talker_input_embed = np.concatenate([role_proj, tags_combined], axis=1)  # [1, 8, 1024]
-
-        prompt_text  = "<|im_start|>assistant\n"
-        body_text    = f"{text}<|im_end|>\n<|im_start|>assistant\n"
-        all_text_ids = self.text_tokenizer.encode(prompt_text) + self.text_tokenizer.encode(body_text)
-
 
         # ---- ICL prompt ----
         all_text_ids_np = np.array(all_text_ids, dtype=np.int64)[np.newaxis, :]
@@ -531,16 +545,22 @@ class Qwen3TTS:
         position_ids = np.arange(prefill_len, dtype=np.int64)[np.newaxis, :]  # [1, prefill]
         kv_caches   = [np.zeros((1, NKV, 0, HDIM), dtype=np.float32) for _ in range(NL * 2)]
 
+        finite_vals = attn_mask[np.isfinite(attn_mask)]
+
+
         last_hidden, kv_caches = self._run_talker_decoder(
             talker_input_embed.astype(np.float32), attn_mask, position_ids, kv_caches
         )
+                                # 期待: -0.00110607
+
         # ==============================================================
-        # 最初のトークン予測
+        # 最初のトークン予測 (prefill の最終 hidden から)
         # ==============================================================
         dummy_text = np.zeros((1, 1, 2048), dtype=np.float32)
         self.talker_io.set_input_blob_shape(dummy_text.shape,     0)
         self.talker_io.set_input_blob_shape(last_hidden.shape,    1)
         _, logits = self.talker_io.run([dummy_text, last_hidden])
+
 
         # テキストフィードバック用の pad embed
         pad_token_id  = self.text_tokenizer.encode("<|endoftext|>")[0]
@@ -548,7 +568,7 @@ class Qwen3TTS:
         self.talker_io.set_input_blob_shape(pad_emb_2048.shape, 0)
         self.talker_io.set_input_blob_shape((1, 1, 1024),       1)
 
-        EOS_TOKEN_ID  = cfg["codec_eos_id"]   # 2150
+        EOS_TOKEN_ID  = cfg["codec_eos_id"]   # ★ 2150
         MAX_NEW_TOKENS = 2048
         temperature    = 0.0
         top_k          = 1
@@ -565,7 +585,6 @@ class Qwen3TTS:
         token_counts   = {}
  
         for step in range(MAX_NEW_TOKENS):
-            print(step)
             if curr_token_id == EOS_TOKEN_ID:
                 print(f"[DECODE] EOS at step {step}")
                 break
@@ -586,13 +605,15 @@ class Qwen3TTS:
 
  
             # ── テキストフィードバック ──────────────────────────────
+            # ★ FIX: tts_pad_token_id=151671 の投影
+            text_idx      = step
             if step < trailing_text_hidden.shape[1]:
                 text_feedback = trailing_text_hidden[:, step:step+1, :]
             else:
                 text_feedback = tts_pad_embed
  
             current_input = (codec_sum_emb + text_feedback).astype(np.float32)  # [1, 1, 1024]
-
+ 
             # ── main talker decode ─────────────────────────────────
             decode_pos  = prefill_len + step
             attn_mask_d = self.generate_attention_mask(1, decode_pos)
@@ -617,13 +638,12 @@ class Qwen3TTS:
                                   else logits_1d[tid] * rep_penalty)
  
             curr_token_id = _sample_token(logits_1d, temperature, top_k)
- 
+  
         # ==============================================================
         # AUDIO 生成: tokenizer_decoder で波形に変換
         # ==============================================================
         T = len(generated_ids)
         if T == 0:
-            print("[WARN] No tokens generated.")
             return np.zeros(1, dtype=np.float32)
  
         # [1, 16, T]: 全16グループに値を格納
@@ -638,11 +658,6 @@ class Qwen3TTS:
         return final_waveform
     
 def main():
-    # for onnx, prototxt in onnx_list:
-    #     check_and_download_models(onnx, prototxt, REMOTE_PATH)
-    # for f in file_list:
-    #     check_and_download_file(f, REMOTE_PATH) 
-
     memory_mode = ailia.get_memory_mode(
     reduce_constant=True,  
     ignore_input_with_initializer=True, 
@@ -652,10 +667,15 @@ def main():
     # 1. セットアップ
     tts_engine = Qwen3TTS(memory_mode)
     
-    # 2. 推論実行 
-    waveform = tts_engine.predict(args.input[0], ref_audio=args.ref_audio, ref_text=args.ref_text)
+    # 2. 検証用データの指定
+    with open(args.ref_text, "r", encoding="utf-8") as f:
+                wav_text = f.read()
+
+    # 3. 推論実行 (Greedyモード)
+    print("Generating speech (AILIA Implementation)...")
+    waveform = tts_engine.predict(args.input, ref_audio=args.ref_audio, ref_text=wav_text)
     
-    # 3. 保存
+    # 4. 保存
     sf.write(args.savepath, waveform.squeeze(), 24000)
     print(f"Saved as {args.savepath}.")
 
