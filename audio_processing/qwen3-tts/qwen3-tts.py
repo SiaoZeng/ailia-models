@@ -224,7 +224,7 @@ def load_qwen_config(config_path="config.json"):
         "assistant_id":       raw["assistant_token_id"],  # 77091
         # ---- talker_config (codec tokenizer 側) ----
         "codec_bos_id":       tc["codec_bos_id"],         # 2149
-        "codec_eos_id":       tc["codec_eos_token_id"],   # 2150  ← 旧コードの 4198 は誤り
+        "codec_eos_id":       tc["codec_eos_token_id"],   # 2150 
         "codec_pad_id":       tc["codec_pad_id"],         # 2148
         "codec_nothink_id":   tc["codec_nothink_id"],     # 2155
         "codec_think_bos_id": tc["codec_think_bos_id"],   # 2156
@@ -238,7 +238,6 @@ def load_qwen_config(config_path="config.json"):
     }
 @dataclass
 class VoiceClonePromptItem:
-    # 確実にコンストラクタが生成されるように型を明示
     ref_code: Any 
     ref_spk_embedding: Any
     x_vector_only_mode: bool
@@ -269,7 +268,7 @@ class Qwen3TTS:
         self.cfg = load_qwen_config("config.json")
         self.speaker_encoder   = ailia.Net(stream=MODEL_PATH_SPEAKER_ENCODER, weight=WEIGHT_PATH_SPEAKER_ENCODER,   memory_mode=memory_mode)
         self.talker_io         = ailia.Net(stream=MODEL_PATH_TALKER_IO, weight=WEIGHT_PATH_TALKER_IO,         memory_mode=memory_mode)
-        self.talker_decoder    = ailia.Net(stream=MODEL_PATH_TALKER_DECODER, weight=WEIGHT_PATH_TALKER_DECODER,    memory_mode=memory_mode)  # ★ full 24-layer
+        self.talker_decoder    = ailia.Net(stream=MODEL_PATH_TALKER_DECODER, weight=WEIGHT_PATH_TALKER_DECODER,    memory_mode=memory_mode) 
         self.tokenizer_encoder = ailia.Net(stream=MODEL_PATH_TOKENIZER_ENCODER, weight=WEIGHT_PATH_TOKENIZER_ENCODER, memory_mode=memory_mode)
         self.tokenizer_decoder = ailia.Net(stream=MODEL_PATH_TOKENIZER_DECODER, weight=WEIGHT_PATH_TOKENIZER_DECODER, memory_mode=memory_mode)
         self.text_emb_weight   = np.load(WEIGHT_PATH_TEXT_EMB)
@@ -494,9 +493,9 @@ class Qwen3TTS:
         # ---- codec tag 埋め込み ----
         tag_ids_0 = [cfg["codec_nothink_id"],   # 2155
                      cfg["codec_think_bos_id"],  # 2156
-                     cfg["codec_think_eos_id"]]  # 2157  ← ★ config
+                     cfg["codec_think_eos_id"]]  # 2157 
         tag_ids_1 = [cfg["codec_pad_id"],        # 2148
-                     cfg["codec_bos_id"]]         # 2149  ← ★ config
+                     cfg["codec_bos_id"]]         # 2149 
         tag_part0   = self.codec_emb_weight[0][tag_ids_0]          # [3, 1024]
         tag_part_spk = spk_emb[np.newaxis, :]                      # [1, 1024]
         tag_part1   = self.codec_emb_weight[0][tag_ids_1]          # [2, 1024]
@@ -505,14 +504,14 @@ class Qwen3TTS:
         )  # [1, 6, 1024]
 
         # ---- role 投影 ----
-        role_ids  = [cfg["im_start_id"], cfg["assistant_id"], 198]  # ★ config (198=\n は固定)
+        role_ids  = [cfg["im_start_id"], cfg["assistant_id"], 198]  # 198=\n
         role_proj = self.talker_io.run(
             [self.text_emb_weight[role_ids][np.newaxis, :].astype(np.float32),
              np.zeros((1, 1, 1024), dtype=np.float32)]
         )[0]  # [1, 3, 1024]
 
         # ---- tag 投影 ----
-        tag_base_ids  = [cfg["tts_pad_id"]] * 4 + [cfg["tts_bos_id"]]  # ★ config
+        tag_base_ids  = [cfg["tts_pad_id"]] * 4 + [cfg["tts_bos_id"]] 
         tag_base_proj = self.talker_io.run(
             [self.text_emb_weight[tag_base_ids][np.newaxis, :].astype(np.float32),
              np.zeros((1, 1, 1024), dtype=np.float32)]
@@ -550,7 +549,6 @@ class Qwen3TTS:
         last_hidden, kv_caches = self._run_talker_decoder(
             talker_input_embed.astype(np.float32), attn_mask, position_ids, kv_caches
         )
-                                # 期待: -0.00110607
 
         # ==============================================================
         # 最初のトークン予測 (prefill の最終 hidden から)
@@ -567,7 +565,7 @@ class Qwen3TTS:
         self.talker_io.set_input_blob_shape(pad_emb_2048.shape, 0)
         self.talker_io.set_input_blob_shape((1, 1, 1024),       1)
 
-        EOS_TOKEN_ID  = cfg["codec_eos_id"]   # ★ 2150
+        EOS_TOKEN_ID  = cfg["codec_eos_id"]   # 2150
         MAX_NEW_TOKENS = 2048
         temperature    = 0.0
         top_k          = 1
@@ -604,7 +602,6 @@ class Qwen3TTS:
 
  
             # ── テキストフィードバック ──────────────────────────────
-            # ★ FIX: tts_pad_token_id=151671 の投影
             text_idx      = step
             if step < trailing_text_hidden.shape[1]:
                 text_feedback = trailing_text_hidden[:, step:step+1, :]
@@ -675,7 +672,7 @@ def main():
                 wav_text = f.read()
 
     # 3. 推論実行 (Greedyモード)
-    print("Generating speech (AILIA Implementation)...")
+    print("Generating speech...")
     waveform = tts_engine.predict(args.input, ref_audio=args.ref_audio, ref_text=wav_text)
     
     # 4. 保存
