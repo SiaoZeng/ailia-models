@@ -42,7 +42,7 @@ the konbini example from
 [issue #1854](https://github.com/ailia-ai/ailia-models/issues/1854):
 
 ```bash
-$ python3 moirai.py --target sales --feat temperature,is_holiday
+$ python3 moirai.py --target sales --feat temperature,is_holiday --patch_size 16
 ```
 
 You can switch between the three publicly released Moirai-1.1-R sizes (each
@@ -72,6 +72,37 @@ $ python3 moirai.py --num_samples 200 --seed 0
 ```
 
 By default the ailia SDK is used. Pass `--onnx` to use ONNX Runtime instead.
+
+### Choosing `--patch_size` when using covariates
+
+Moirai compresses every `patch_size` consecutive timesteps of each variable
+(target *and* `feat_dynamic_real`) into a single transformer token. If
+`patch_size` is too large, day-level covariate spikes (e.g. `is_holiday=1`
+on Dec 24-25) get averaged inside one token and the model can no longer
+condition the forecast on them.
+
+The default `--patch_size auto` picks the patch size that minimises the
+**past-window** validation loss; this is *not* always the best patch size
+for **utilising future covariates**. For the konbini example above we
+measured the median forecast gap between holiday and non-holiday days in the
+forecast horizon:
+
+| size  | auto  | p=8  | **p=16**  | p=32 | p=64 |
+|------:|------:|-----:|----------:|-----:|-----:|
+| small | +0.40 | -0.39 | **+8.54** | +7.40 | -0.65 |
+| base  | +0.86 | +0.16 | **+5.68** | +2.30 | -0.53 |
+| large | -1.07 | +0.02 | **+10.52**| +4.23 | -1.10 |
+
+(reference observed gap in the context window: +22.34)
+
+Three takeaways:
+1. **Pick `--patch_size 16` (or 32) explicitly when you rely on
+   `feat_dynamic_real`.** `auto` mode tends to under-utilise the covariate.
+2. **Bigger model size does not reliably help.** `large` only gives a small
+   bump over `small` at the same patch size, and is no better than `small`
+   under `auto`.
+3. **Choose `prediction_len` close to a multiple of the patch size** so the
+   forecast horizon is not split across half-empty patches.
 
 ## Reference
 
