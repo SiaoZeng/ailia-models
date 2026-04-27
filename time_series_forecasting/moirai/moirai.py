@@ -216,17 +216,30 @@ def draw_result(
     history, trues, preds_quantiles, save_path, target_name, covariates=None
 ):
     has_cov = covariates is not None and len(covariates) > 0
-    n_rows = 1 + (len(covariates) if has_cov else 0)
-    fig, axes = plt.subplots(n_rows, 1, figsize=(12, 3 * n_rows), sharex=True)
-    if n_rows == 1:
-        axes = [axes]
+    holiday_band = None
+    if has_cov:
+        for name, values in covariates.items():
+            # Heuristic: a binary covariate (0/1) is treated as a holiday-style
+            # indicator and highlighted as orange bands on the forecast plot.
+            uniq = np.unique(values)
+            if set(uniq.tolist()).issubset({0, 1}):
+                holiday_band = (name, np.asarray(values))
+                break
 
-    ax = axes[0]
+    n_rows = 2 + (len(covariates) if has_cov else 0)
+    fig = plt.figure(figsize=(12, 2.5 * n_rows))
+    gs = fig.add_gridspec(n_rows, 1, hspace=0.35)
+
     n_hist = len(history)
     n_pred = preds_quantiles["median"].shape[-1]
     x_hist = np.arange(n_hist)
     x_pred = np.arange(n_hist, n_hist + n_pred)
+    median = preds_quantiles["median"]
+    q10 = preds_quantiles["q10"]
+    q90 = preds_quantiles["q90"]
 
+    # (1) Full overview ----------------------------------------------------
+    ax = fig.add_subplot(gs[0, 0])
     ax.plot(x_hist, history, label=f"History ({n_hist} steps)", color="darkblue")
     if 0 < len(trues):
         ax.plot(
@@ -237,23 +250,55 @@ def draw_result(
             linestyle="--",
             alpha=0.5,
         )
-    median = preds_quantiles["median"]
-    q10 = preds_quantiles["q10"]
-    q90 = preds_quantiles["q90"]
     ax.plot(x_pred, median, label="Forecast (median)", color="red", linestyle="--")
     ax.fill_between(x_pred, q10, q90, color="red", alpha=0.2, label="80% interval")
+    ax.set_ylabel(target_name)
+    ax.set_title("Overview")
+    ax.legend(loc="upper left")
+    ax.grid(alpha=0.3)
+
+    # (2) Zoom on last 3x prediction_len of history + the prediction window.
+    ax = fig.add_subplot(gs[1, 0])
+    zoom_hist = min(3 * n_pred, n_hist)
+    xh = np.arange(-zoom_hist, 0)
+    xp = np.arange(0, n_pred)
+    ax.plot(xh, history[-zoom_hist:], color="darkblue", label="History")
+    if 0 < len(trues):
+        ax.plot(
+            xp[: len(trues)],
+            trues,
+            "--",
+            color="darkblue",
+            alpha=0.5,
+            label="Ground Truth",
+        )
+    ax.plot(xp, median, "--", color="red", label="Forecast (median)")
+    ax.fill_between(xp, q10, q90, color="red", alpha=0.2, label="80% interval")
+    if holiday_band is not None:
+        name, vals = holiday_band
+        # Highlight the binary indicator on the prediction window.
+        future_vals = vals[-n_pred:]
+        for i, h in enumerate(future_vals):
+            if h:
+                ax.axvspan(i - 0.4, i + 0.4, color="orange", alpha=0.18)
+        ax.axvline(0, color="gray", linestyle=":")
+        ax.set_title(f"Zoomed forecast (orange bands = {name}=1)")
+    else:
+        ax.axvline(0, color="gray", linestyle=":")
+        ax.set_title("Zoomed forecast")
     ax.set_ylabel(target_name)
     ax.legend(loc="upper left")
     ax.grid(alpha=0.3)
 
+    # (3+) Covariate panels (full series).
     if has_cov:
-        for ax_i, (name, values) in zip(axes[1:], covariates.items()):
+        for ax_idx, (name, values) in enumerate(covariates.items()):
+            ax_i = fig.add_subplot(gs[2 + ax_idx, 0])
             ax_i.plot(np.arange(len(values)), values, color="green")
             ax_i.set_ylabel(name)
             ax_i.grid(alpha=0.3)
 
-    axes[-1].set_xlabel("Time")
-    plt.tight_layout()
+    fig.axes[-1].set_xlabel("Time")
     plt.savefig(save_path)
 
 
