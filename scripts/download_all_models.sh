@@ -396,6 +396,7 @@ cd ../../text_recognition/ndlocr_text_recognition; python3 ndlocr_text_recogniti
 cd ../../text_recognition/donut; python3 donut.py ${OPTION}
 cd ../../time_series_forecasting/informer2020; python3 informer2020.py ${OPTION}
 cd ../../time_series_forecasting/timesfm; python3 timesfm.py ${OPTION}
+cd ../../time_series_forecasting/moirai; python3 moirai.py ${OPTION}
 cd ../../vehicle_recognition/vehicle-attributes-recognition-barrier; python3 vehicle-attributes-recognition-barrier.py ${OPTION}
 cd ../../vehicle_recognition/vehicle-license-plate-detection-barrier; python3 vehicle-license-plate-detection-barrier.py ${OPTION}
 cd ../../vision_language_model/llava; python3 llava.py ${OPTION}
