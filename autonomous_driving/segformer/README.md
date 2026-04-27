@@ -122,6 +122,23 @@ logits max diff: 0.000012
 PASSED (tolerance=0.001)
 ```
 
+### End-to-end PyTorch vs ONNX comparison
+
+`export/compare_torch_vs_onnx.py` runs both the upstream HuggingFace
+PyTorch model and the exported ONNX through the same preprocessing on
+`input.jpg` and renders a 3-panel comparison (`compare_<variant>.png`):
+PyTorch overlay, ONNX overlay, and a per-pixel disagreement map.
+
+For `cityscapes-1024-1024` on the bundled 1280x720 driving image:
+
+```
+max abs diff (logits):   6.10e-05
+mean abs diff (logits):  4.11e-06
+per-pixel argmax agreement: 100.0000%
+```
+
+![Compare](compare_cityscapes-1024-1024.png)
+
 ## Architecture
 
 SegFormer-B0 consists of:
@@ -143,6 +160,7 @@ Cityscapes or ADE20K by NVIDIA.
 |------|-------------|
 | `segformer.py` | Main inference script (ONNX Runtime / ailia) |
 | `export/segformer_onnx_export.py` | ONNX export script with verification |
+| `export/compare_torch_vs_onnx.py` | PyTorch vs ONNX numerical / visual comparison |
 
 ## Reference
 
