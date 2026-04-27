@@ -27,12 +27,22 @@ SAVE_IMAGE_PATH = "output.png"
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/moirai/"
 
 SIZE_TO_FILES = {
-    "small": ("moirai-1.1-R-small.onnx", "moirai-1.1-R-small.onnx.prototxt"),
-    "base": ("moirai-1.1-R-base.onnx", "moirai-1.1-R-base.onnx.prototxt"),
-    "large": ("moirai-1.1-R-large.onnx", "moirai-1.1-R-large.onnx.prototxt"),
+    "small": ("moirai-1.0-R-small.onnx", "moirai-1.0-R-small.onnx.prototxt"),
+    "base": ("moirai-1.0-R-base.onnx", "moirai-1.0-R-base.onnx.prototxt"),
+    "large": ("moirai-1.0-R-large.onnx", "moirai-1.0-R-large.onnx.prototxt"),
 }
 
-# Static configuration of Moirai-1.1-R (all sizes).
+# Last commit before the 2024-03-28 license change for each Moirai-1.0-R size.
+# At these revisions the README still declared `license: apache-2.0`. We pin
+# the weights/config download to these revisions so the pipeline keeps
+# operating on Apache-2.0 era artifacts.
+APACHE_REVISIONS = {
+    "small": "4a950dea3b2c38b9675082959109e1b36d40ab16",
+    "base":  "03e0d0f88ea7dee295d398d102fb582494b549e1",
+    "large": "bc5caba1947b76c9efd513ada3675b8d5006f09a",
+}
+
+# Static configuration of Moirai-1.0-R (all sizes).
 PATCH_SIZES = (8, 16, 32, 64, 128)
 MAX_PATCH = max(PATCH_SIZES)
 NUM_MIXTURE_COMPONENTS = 4  # StudentT, NormalFixedScale, NegativeBinomial, LogNormal
@@ -48,7 +58,7 @@ parser.add_argument(
     type=str,
     default="small",
     choices=list(SIZE_TO_FILES.keys()),
-    help="Moirai-1.1-R model size",
+    help="Moirai-1.0-R model size",
 )
 parser.add_argument(
     "--target",
@@ -373,9 +383,30 @@ def time_series_forecasting(net):
     # Load the original MoiraiModule once so we can re-use its DistributionOutput
     # configuration (patch_sizes, mixture components, etc.). The actual forward
     # pass is replaced with the ONNX-backed OnnxMoiraiModule below.
-    repo = f"Salesforce/moirai-1.1-R-{args.size}"
-    logger.info(f"Loading Moirai config from HuggingFace: {repo}")
-    base_module = MoiraiModule.from_pretrained(repo)
+    #
+    # We pin the download to the Apache-2.0 era revision (the last commit
+    # before Salesforce relicensed Moirai-1.0-R to CC-BY-NC-4.0 on
+    # 2024-03-28) and pull the legacy `model.ckpt` directly, so neither the
+    # ONNX file nor the in-process MoiraiModule depend on any artifact that
+    # was distributed under the new license.
+    from huggingface_hub import hf_hub_download
+
+    repo = f"Salesforce/moirai-1.0-R-{args.size}"
+    revision = APACHE_REVISIONS[args.size]
+    logger.info(f"Loading Apache-2.0 Moirai weights: {repo} @ {revision[:10]}")
+    ckpt_path = hf_hub_download(
+        repo_id=repo, filename="model.ckpt", revision=revision
+    )
+    ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    base_module = MoiraiModule(**ck["hyper_parameters"]["module_kwargs"])
+    base_module.load_state_dict(
+        {
+            k.removeprefix("module."): v
+            for k, v in ck["state_dict"].items()
+            if k.startswith("module.")
+        },
+        strict=True,
+    )
     base_module.eval()
 
     onnx_module = _make_onnx_module(net, base_module, use_onnx_runtime=args.onnx)

@@ -4,7 +4,16 @@ Wraps `uni2ts.model.moirai.MoiraiModule` so that its forward returns the raw
 mixture-distribution parameter tensors (along with the scaler's loc / scale).
 The actual sampling and post-processing is performed in the inference script.
 
-Supported sizes: small, base, large (Moirai 1.1-R).
+Supported sizes: small, base, large (Moirai 1.0-R, Apache-2.0 era weights).
+
+The Moirai-1.0-R weights on Hugging Face were originally released under
+Apache-2.0. Salesforce relicensed them to CC-BY-NC-4.0 on 2024-03-28; the
+`Update license` commit, however, did not modify the weights themselves.
+This exporter pins each model to the **last revision before the
+relicense**, where the README still declared `license: apache-2.0`, and
+downloads the legacy `model.ckpt` (PyTorch Lightning checkpoint) so that
+the weights flowing into the exported ONNX file remain unambiguously
+Apache-2.0.
 """
 
 import argparse
@@ -13,6 +22,7 @@ import os
 
 import torch
 import torch.nn.functional as F
+from huggingface_hub import hf_hub_download
 from torch import nn
 
 from uni2ts.model.moirai import MoiraiModule
@@ -40,7 +50,15 @@ def _manual_scaled_dot_product_attention(
     return torch.matmul(attn_weight, value)
 
 
-REPO_TEMPLATE = "Salesforce/moirai-{version}-R-{size}"
+# Last commit before the 2024-03-28 license change for each Moirai-1.0-R size.
+# At these revisions the README still declares `license: apache-2.0`.
+APACHE_REVISIONS = {
+    "small": "4a950dea3b2c38b9675082959109e1b36d40ab16",
+    "base":  "03e0d0f88ea7dee295d398d102fb582494b549e1",
+    "large": "bc5caba1947b76c9efd513ada3675b8d5006f09a",
+}
+
+REPO_TEMPLATE = "Salesforce/moirai-1.0-R-{size}"
 
 
 class MoiraiExportWrapper(nn.Module):
@@ -120,13 +138,42 @@ class MoiraiExportWrapper(nn.Module):
         )
 
 
-def export(size: str, version: str, opset: int, output_dir: str, seq_len: int):
+def _load_apache_module(size: str) -> MoiraiModule:
+    """Download the Apache-2.0 era `model.ckpt` and rebuild the MoiraiModule.
+
+    The legacy Lightning checkpoint stores both the module's hyperparameters
+    (under ``hyper_parameters['module_kwargs']``) and the weights (under
+    ``state_dict`` with a ``module.`` prefix), so we can construct a fresh
+    ``MoiraiModule`` without touching the current Hugging Face revision.
+    """
+    revision = APACHE_REVISIONS[size]
+    repo = REPO_TEMPLATE.format(size=size)
+    print(f"Loading {repo} @ {revision[:10]} (Apache-2.0) ...", flush=True)
+    ckpt_path = hf_hub_download(
+        repo_id=repo, filename="model.ckpt", revision=revision
+    )
+    ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    module_kwargs = ck["hyper_parameters"]["module_kwargs"]
+    state_dict = {
+        k.removeprefix("module."): v
+        for k, v in ck["state_dict"].items()
+        if k.startswith("module.")
+    }
+    module = MoiraiModule(**module_kwargs)
+    missing, unexpected = module.load_state_dict(state_dict, strict=True)
+    if missing or unexpected:
+        raise RuntimeError(
+            f"Unexpected state_dict mismatch: missing={missing} "
+            f"unexpected={unexpected}"
+        )
+    return module
+
+
+def export(size: str, opset: int, output_dir: str, seq_len: int):
     # Patch SDPA before loading the module to avoid the ONNX exporter bug.
     F.scaled_dot_product_attention = _manual_scaled_dot_product_attention
 
-    repo = REPO_TEMPLATE.format(version=version, size=size)
-    print(f"Loading {repo} ...", flush=True)
-    module = MoiraiModule.from_pretrained(repo)
+    module = _load_apache_module(size)
     module.eval()
 
     wrapper = MoiraiExportWrapper(module).eval()
@@ -155,7 +202,7 @@ def export(size: str, version: str, opset: int, output_dir: str, seq_len: int):
             patch_size,
         )
 
-    onnx_name = f"moirai-{version}-R-{size}.onnx"
+    onnx_name = f"moirai-1.0-R-{size}.onnx"
     onnx_path = os.path.join(output_dir, onnx_name)
     os.makedirs(output_dir, exist_ok=True)
     print(f"Exporting to {onnx_path} (opset={opset}) ...", flush=True)
@@ -211,20 +258,13 @@ def export(size: str, version: str, opset: int, output_dir: str, seq_len: int):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Export Moirai to ONNX")
+    parser = argparse.ArgumentParser(description="Export Moirai-1.0-R to ONNX")
     parser.add_argument(
         "--size",
         type=str,
         default="small",
         choices=["small", "base", "large"],
         help="Model size",
-    )
-    parser.add_argument(
-        "--version",
-        type=str,
-        default="1.1",
-        choices=["1.0", "1.1"],
-        help="Model version (Moirai-?-R)",
     )
     parser.add_argument(
         "--opset",
@@ -248,7 +288,6 @@ def main():
 
     export(
         size=args.size,
-        version=args.version,
         opset=args.opset,
         output_dir=args.output_dir,
         seq_len=args.seq_len,

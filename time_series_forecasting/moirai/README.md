@@ -5,6 +5,27 @@ zero-shot forecasting and accepts known-future covariates (`feat_dynamic_real`).
 This makes it suitable for use cases where exogenous signals such as temperature
 or holidays influence the target series.
 
+## Weights provenance & license
+
+The published Moirai-1.0-R weights on Hugging Face were originally released
+under **Apache-2.0**. Salesforce relicensed the same Hugging Face repositories
+to **CC-BY-NC-4.0** on 2024-03-28, but Apache-2.0 grants are perpetual and
+irrevocable for releases that already happened.
+
+This export pulls each model from the **last commit before the relicense**,
+where the README still declares `license: apache-2.0`. The downloaded
+artifact is the legacy `model.ckpt` (PyTorch Lightning checkpoint), which is
+loaded into a fresh `MoiraiModule` and exported to ONNX.
+
+| Size  | Hugging Face revision | Date       | README license |
+|-------|-----------------------|------------|----------------|
+| small | `4a950dea3b2c38b9675082959109e1b36d40ab16` | 2024-03-26 | `apache-2.0`   |
+| base  | `03e0d0f88ea7dee295d398d102fb582494b549e1` | 2024-03-26 | `apache-2.0`   |
+| large | `bc5caba1947b76c9efd513ada3675b8d5006f09a` | 2024-03-26 | `apache-2.0`   |
+
+Note that **Moirai-1.1-R weights were never released under Apache-2.0**, so
+they are not used here.
+
 ## Input
 A CSV file containing a `date` column, one target column, and (optionally)
 extra covariate columns whose future values are known.
@@ -42,10 +63,10 @@ the konbini example from
 [issue #1854](https://github.com/ailia-ai/ailia-models/issues/1854):
 
 ```bash
-$ python3 moirai.py --target sales --feat temperature,is_holiday --patch_size 16
+$ python3 moirai.py --target sales --feat temperature,is_holiday --patch_size 32
 ```
 
-You can switch between the three publicly released Moirai-1.1-R sizes (each
+You can switch between the three publicly released Moirai-1.0-R sizes (each
 corresponds to a separate ONNX file):
 
 ```bash
@@ -83,32 +104,29 @@ condition the forecast on them.
 
 The default `--patch_size auto` picks the patch size that minimises the
 **past-window** validation loss; this is *not* always the best patch size
-for **utilising future covariates**. For the konbini example above we
-measured the median forecast gap between holiday and non-holiday days in the
-forecast horizon:
+for **utilising future covariates**. Measured median forecast gap between
+holiday and non-holiday days in the konbini example (reference observed
+gap in the context window: +22.34):
 
-| size  | auto  | p=8  | **p=16**  | p=32 | p=64 |
-|------:|------:|-----:|----------:|-----:|-----:|
-| small | +0.40 | -0.39 | **+8.54** | +7.40 | -0.65 |
-| base  | +0.86 | +0.16 | **+5.68** | +2.30 | -0.53 |
-| large | -1.07 | +0.02 | **+10.52**| +4.23 | -1.10 |
+| size  | auto  | p=16  | **p=32**  |
+|------:|------:|------:|----------:|
+| small | -2.84 | -0.54 | **+2.27** |
+| base  | +0.35 | +0.14 | **+3.02** |
+| large | +0.90 | +0.19 | **+5.26** |
 
-(reference observed gap in the context window: +22.34)
+For covariate-driven forecasts with Moirai-1.0-R, `--patch_size 32` is the
+recommended setting; `auto` tends to pick a coarser patch size that erases
+the covariate signal. Larger model sizes only modestly improve covariate
+uptake, so the patch size is the dominant factor.
 
-Three takeaways:
-1. **Pick `--patch_size 16` (or 32) explicitly when you rely on
-   `feat_dynamic_real`.** `auto` mode tends to under-utilise the covariate.
-2. **Bigger model size does not reliably help.** `large` only gives a small
-   bump over `small` at the same patch size, and is no better than `small`
-   under `auto`.
-3. **Choose `prediction_len` close to a multiple of the patch size** so the
-   forecast horizon is not split across half-empty patches.
+(Moirai-1.1-R's covariate handling was reportedly improved over 1.0-R, but
+its weights were never released under Apache-2.0 and are not used here.)
 
 ## Reference
 
 - [Salesforce uni2ts](https://github.com/SalesforceAIResearch/uni2ts)
 - [Moirai paper (arXiv:2402.02592)](https://arxiv.org/abs/2402.02592)
-- [Hugging Face: Moirai-1.1-R collection](https://huggingface.co/collections/Salesforce/moirai-r-models-65c8d3a94c51428c300e0742)
+- [Hugging Face: Moirai-1.0-R-small (Apache-2.0 revision)](https://huggingface.co/Salesforce/moirai-1.0-R-small/tree/4a950dea3b2c38b9675082959109e1b36d40ab16)
 
 ## Framework
 
@@ -120,11 +138,11 @@ ONNX opset = 17
 
 ## Netron
 
-[moirai-1.1-R-small.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/moirai/moirai-1.1-R-small.onnx.prototxt)
+[moirai-1.0-R-small.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/moirai/moirai-1.0-R-small.onnx.prototxt)
 
-[moirai-1.1-R-base.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/moirai/moirai-1.1-R-base.onnx.prototxt)
+[moirai-1.0-R-base.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/moirai/moirai-1.0-R-base.onnx.prototxt)
 
-[moirai-1.1-R-large.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/moirai/moirai-1.1-R-large.onnx.prototxt)
+[moirai-1.0-R-large.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/moirai/moirai-1.0-R-large.onnx.prototxt)
 
 ## Notes
 
@@ -140,10 +158,10 @@ required at inference time:
 $ pip install uni2ts gluonts
 ```
 
-The ONNX file does not contain the model weights for the HuggingFace
-`MoiraiModule` constructor; the inference script downloads the `config.json`
-of the matching repository (e.g. `Salesforce/moirai-1.1-R-small`) so that
-the distribution-output object can be reconstructed.
+The inference script downloads `model.ckpt` from the pinned Apache-2.0
+revision (e.g. `Salesforce/moirai-1.0-R-small @ 4a950dea3b...`) so that the
+distribution-output object can be reconstructed. The ONNX file alone does
+not encode the mixture-component metadata.
 
 ## Re-exporting the model
 
@@ -155,5 +173,8 @@ $ cd export
 $ python3 export_moirai.py --size small  --output_dir ..
 $ python3 export_moirai.py --size base   --output_dir ..
 $ python3 export_moirai.py --size large  --output_dir ..
-$ python3 onnx2prototxt.py ../moirai-1.1-R-small.onnx ../moirai-1.1-R-base.onnx ../moirai-1.1-R-large.onnx
+$ python3 onnx2prototxt.py ../moirai-1.0-R-small.onnx ../moirai-1.0-R-base.onnx ../moirai-1.0-R-large.onnx
 ```
+
+The export script pins the download to the Apache-2.0 revision listed in
+[the table above](#weights-provenance--license).
