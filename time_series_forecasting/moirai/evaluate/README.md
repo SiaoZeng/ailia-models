@@ -11,7 +11,7 @@ model exploits known-future covariates (`feat_dynamic_real`).
 
 | Family | Variant | License | Patch / config |
 |---|---|---|---|
-| Moirai-1.0-R | large | **Apache-2.0** (revision `bc5caba194...`) | patch_size=32 |
+| Moirai-1.0-R | large | **Apache-2.0** (revision `bc5caba194...`) | patch_size=8 (auto) |
 | Moirai-1.1-R | large | CC-BY-NC-4.0 | patch_size=16 |
 | Moirai-2.0-R | small (the only public size) | CC-BY-NC-4.0 | patch_size=16 (fixed) |
 | Chronos-2 | `amazon/chronos-2` (~120M parameters) | **Apache-2.0** | input/output patch=16 (fixed) |
@@ -37,7 +37,7 @@ shaded area is the 80% prediction interval.
 
 | Model | License | MAE | RMSE | PI80 coverage | Median gap (holiday − non-holiday) |
 |---|---|--:|--:|--:|--:|
-| Moirai-1.0-R-large (p=32) | **Apache-2.0** | 13.19 | 14.49 | 75% | +0.71 |
+| Moirai-1.0-R-large (p=8) | **Apache-2.0** | 12.20 | 14.29 | 55% | -0.01 |
 | Moirai-1.1-R-large (p=16) | CC-BY-NC-4.0 | 12.60 | 14.02 | 75% | +1.73 |
 | Moirai-2.0-R-small (p=16) | CC-BY-NC-4.0 | 7.82 | 11.19 | 70% | +11.73 |
 | **Chronos-2** | **Apache-2.0** | **3.54** | **4.70** | **80%** | **+22.79** |
@@ -58,7 +58,7 @@ there is no Mon ↔ Tue/Wed extrapolation gap.
 
 | Model | Irregular gap (Tue/Wed) | Weekend gap (Sat/Sun) | Irreg MAE | Weekend MAE |
 |---|--:|--:|--:|--:|
-| Moirai-1.0-R-large (p=32) | +0.09 | +0.91 | 20.34 | 8.69 |
+| Moirai-1.0-R-large (p=8) | +1.22 | -0.42 | 25.62 | 16.43 |
 | Moirai-1.1-R-large (p=16) | +0.51 | +2.13 | 20.82 | 8.36 |
 | Moirai-2.0-R-small | +0.28 | +15.54 | 27.36 | 2.86 |
 | **Chronos-2** | **+26.12** | +21.69 | **7.71** | 4.17 |
