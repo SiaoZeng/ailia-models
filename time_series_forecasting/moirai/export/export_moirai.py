@@ -173,6 +173,43 @@ def export(size: str, opset: int, output_dir: str, seq_len: int):
     # Patch SDPA before loading the module to avoid the ONNX exporter bug.
     F.scaled_dot_product_attention = _manual_scaled_dot_product_attention
 
+    # Moirai's QueryKeyProjection.forward calls ``tensor.split(split_sizes,
+    # dim=-1)`` where ``split_sizes`` has a leading 0 (because
+    # ``partial_factor=(0.0, 0.5)`` makes the first slice empty). The ONNX
+    # exporter dutifully emits a 3-output Split, which ailia rejects with
+    # "Unexpected mixed empty and non-empty outputs". Patch the forward to
+    # skip the size-0 slices, which is functionally identical.
+    from uni2ts.module.position.attn_projection import QueryKeyProjection
+
+    def _qk_forward(self, query, key, query_id, kv_id):
+        if self.partial_factor is None:
+            return (
+                self.query_proj(query, seq_id=query_id),
+                self.key_proj(key, seq_id=kv_id),
+            )
+        sizes = self.split_sizes  # (left, mid, right)
+        head_dim = self.head_dim
+        # Slice with explicit indices to avoid emitting size-0 splits.
+        left = sizes[0]
+        right_start = head_dim - sizes[2]
+
+        q_left = query[..., :left]
+        q_mid = query[..., left:right_start]
+        q_right = query[..., right_start:]
+        k_left = key[..., :left]
+        k_mid = key[..., left:right_start]
+        k_right = key[..., right_start:]
+
+        q_mid = self.query_proj(q_mid, seq_id=query_id)
+        k_mid = self.key_proj(k_mid, seq_id=kv_id)
+
+        # Drop empty slices before concatenating.
+        q_parts = [t for t, s in [(q_left, sizes[0]), (q_mid, sizes[1]), (q_right, sizes[2])] if s > 0]
+        k_parts = [t for t, s in [(k_left, sizes[0]), (k_mid, sizes[1]), (k_right, sizes[2])] if s > 0]
+        return torch.cat(q_parts, dim=-1), torch.cat(k_parts, dim=-1)
+
+    QueryKeyProjection.forward = _qk_forward
+
     module = _load_apache_module(size)
     module.eval()
 
