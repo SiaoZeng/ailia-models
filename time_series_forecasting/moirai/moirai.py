@@ -51,7 +51,7 @@ NUM_MIXTURE_COMPONENTS = 4  # StudentT, NormalFixedScale, NegativeBinomial, LogN
 # Argument Parser Config
 # ======================
 
-parser = get_base_parser("Moirai", DATA_PATH, SAVE_IMAGE_PATH)
+parser = get_base_parser("Moirai", DATA_PATH, SAVE_IMAGE_PATH, fp16_support = False)
 parser.add_argument("-i", "--input", type=str, default=DATA_PATH)
 parser.add_argument(
     "--size",

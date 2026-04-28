@@ -46,7 +46,7 @@ QUANTILES = [
 # Argument Parser Config
 # ======================
 
-parser = get_base_parser("Chronos-2", DATA_PATH, SAVE_IMAGE_PATH)
+parser = get_base_parser("Chronos-2", DATA_PATH, SAVE_IMAGE_PATH, fp16_support = False)
 parser.add_argument("-i", "--input", type=str, default=DATA_PATH)
 parser.add_argument(
     "--target",
