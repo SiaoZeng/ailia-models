@@ -27,13 +27,18 @@ SAVE_IMAGE_PATH = "output.png"
 
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/moirai/"
 
-SIZE_TO_FILES = {
-    "small": ("moirai-1.0-R-small.onnx", "moirai-1.0-R-small.onnx.prototxt"),
-    "base": ("moirai-1.0-R-base.onnx", "moirai-1.0-R-base.onnx.prototxt"),
-    "large": ("moirai-1.0-R-large.onnx", "moirai-1.0-R-large.onnx.prototxt"),
+VERSIONS = ("1.0", "1.1")
+
+VERSION_SIZE_TO_FILES = {
+    ("1.0", "small"): ("moirai-1.0-R-small.onnx", "moirai-1.0-R-small.onnx.prototxt"),
+    ("1.0", "base"):  ("moirai-1.0-R-base.onnx",  "moirai-1.0-R-base.onnx.prototxt"),
+    ("1.0", "large"): ("moirai-1.0-R-large.onnx", "moirai-1.0-R-large.onnx.prototxt"),
+    ("1.1", "small"): ("moirai-1.1-R-small.onnx", "moirai-1.1-R-small.onnx.prototxt"),
+    ("1.1", "base"):  ("moirai-1.1-R-base.onnx",  "moirai-1.1-R-base.onnx.prototxt"),
+    ("1.1", "large"): ("moirai-1.1-R-large.onnx", "moirai-1.1-R-large.onnx.prototxt"),
 }
 
-# Static configuration of Moirai-1.0-R (all sizes).
+# Static configuration of Moirai-1.x-R (all sizes).
 PATCH_SIZES = (8, 16, 32, 64, 128)
 MAX_PATCH = max(PATCH_SIZES)
 # NormalFixedScale mixture component uses a fixed scale of 1e-3 (uni2ts default).
@@ -46,11 +51,18 @@ NORMAL_FIXED_SCALE = 1e-3
 parser = get_base_parser("Moirai", DATA_PATH, SAVE_IMAGE_PATH, fp16_support=False)
 parser.add_argument("-i", "--input", type=str, default=DATA_PATH)
 parser.add_argument(
+    "--version",
+    type=str,
+    default="1.0",
+    choices=list(VERSIONS),
+    help="Moirai version: 1.0 (Apache-2.0) or 1.1 (CC-BY-NC-4.0)",
+)
+parser.add_argument(
     "--size",
     type=str,
     default="large",
-    choices=list(SIZE_TO_FILES.keys()),
-    help="Moirai-1.0-R model size",
+    choices=["small", "base", "large"],
+    help="Model size",
 )
 parser.add_argument(
     "--target",
@@ -653,7 +665,7 @@ def time_series_forecasting(net):
 
 
 def main():
-    weight_path, model_path = SIZE_TO_FILES[args.size]
+    weight_path, model_path = VERSION_SIZE_TO_FILES[(args.version, args.size)]
     check_and_download_models(weight_path, model_path, REMOTE_PATH)
 
     if not args.onnx:
