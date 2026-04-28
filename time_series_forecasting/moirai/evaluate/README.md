@@ -37,13 +37,13 @@ shaded area is the 80% prediction interval.
 
 | Model | License | MAE | RMSE | PI80 coverage | Median gap (holiday − non-holiday) |
 |---|---|--:|--:|--:|--:|
-| Moirai-1.0-R-large (p=32) | **Apache-2.0** | 10.39 | 13.04 | 65% | +4.37 |
-| Moirai-1.1-R-large (p=16) | CC-BY-NC-4.0 | 8.79 | 12.14 | 70% | +8.24 |
-| Moirai-2.0-R-small (p=16) | CC-BY-NC-4.0 | 6.25 | 10.88 | 80% | +14.95 |
-| **Chronos-2** | **Apache-2.0** | **5.30** | **7.77** | **85%** | **+19.97** |
+| Moirai-1.0-R-large (p=32) | **Apache-2.0** | 13.19 | 14.49 | 75% | +0.71 |
+| Moirai-1.1-R-large (p=16) | CC-BY-NC-4.0 | 12.60 | 14.02 | 75% | +1.73 |
+| Moirai-2.0-R-small (p=16) | CC-BY-NC-4.0 | 7.82 | 11.19 | 70% | +11.73 |
+| **Chronos-2** | **Apache-2.0** | **3.54** | **4.70** | **80%** | **+22.79** |
 
 Reference: observed `sales` gap between holiday and non-holiday days in
-the past 200 days of context is **+23.61**.
+the past 200 days of context is **+23.54**.
 
 ### Per-holiday-type breakdown
 
@@ -52,23 +52,40 @@ The 20-day prediction window contains two kinds of `is_holiday=1` days:
 Christmas Eve and Christmas in the synthetic data). Foundation models
 typically pick up the weekend pattern from the target's own auto-
 correlation, but capturing the irregular one requires actually trusting
-the future `is_holiday` covariate. Splitting the gap by holiday type:
+the future `is_holiday` covariate. The 200-day context window now
+contains 6-7 holidays on each weekday Mon-Fri (plus 58 weekends), so
+there is no Mon ↔ Tue/Wed extrapolation gap.
 
-| Model | Irregular gap (Tue/Wed) | Weekend gap (Sat/Sun) |
-|---|--:|--:|
-| Moirai-1.0-R-large (p=32) | +1.08 | +5.47 |
-| Moirai-1.1-R-large (p=16) | -1.49 | +11.48 |
-| Moirai-2.0-R-small | +0.51 | +19.77 |
-| **Chronos-2** | **+14.41** | +21.83 |
-| Ground truth | +34.69 | +23.85 |
+| Model | Irregular gap (Tue/Wed) | Weekend gap (Sat/Sun) | Irreg MAE | Weekend MAE |
+|---|--:|--:|--:|--:|
+| Moirai-1.0-R-large (p=32) | +0.09 | +0.91 | 20.34 | 8.69 |
+| Moirai-1.1-R-large (p=16) | +0.51 | +2.13 | 20.82 | 8.36 |
+| Moirai-2.0-R-small | +0.28 | +15.54 | 27.36 | 2.86 |
+| **Chronos-2** | **+26.12** | +21.69 | **7.71** | 4.17 |
+| Ground truth | +34.69 | +23.85 | — | — |
 
-Among the four, **only Chronos-2 captures the irregular mid-week
-holiday spikes** (~42% of the true effect), while the Moirai family
-basically ignores the future `is_holiday` signal once the date does not
-match Sat/Sun (or Mon, the only weekday on which mid-week holidays
-appear in the 200-day context). This is a structural artefact of how
-each model fuses covariates with the target time-series, not a defect
-of the export.
+When weekday coverage of `is_holiday=1` is balanced, the difference
+between the four models becomes stark:
+
+- **Chronos-2** lifts the median by +26.12 on the unseen Tue/Wed
+  holidays (75% of the true effect), confirming that it actually uses
+  the future `is_holiday` covariate as an independent feature.
+- **Moirai-1.0/1.1** essentially ignore `is_holiday` (gap ≈ 0 on both
+  weekend AND mid-week), regressing back to a smoothed weekly average.
+  With more diverse holiday timing, the autocorrelation of `sales` is
+  no longer cleanly periodic, so Moirai's "follow the lag pattern"
+  fallback doesn't help either, and overall MAE rises to 12-13.
+- **Moirai-2.0-R-small** keeps the weekend boost (+15.54) thanks to
+  surviving weekly autocorrelation but still cannot use `is_holiday`
+  on weekdays it has not seen the spike on (+0.28 on Tue/Wed).
+- The MAE column is dominated by the unseen Tue/Wed Christmas: only
+  Chronos-2 reaches single-digit MAE on those days (7.71), the rest
+  miss by 20-27 sales units.
+
+Bottom line: with a clean covariate-only signal (Moirai's weekly cycle
+removed by the diverse holiday calendar), **only Chronos-2's covariate
+fusion path actually works**. Moirai's `feat_dynamic_real` channel is
+effectively a hint at best.
 
 ## Takeaways
 
