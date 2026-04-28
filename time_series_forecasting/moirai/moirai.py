@@ -24,7 +24,7 @@ logger = getLogger(__name__)
 DATA_PATH = "input.csv"
 SAVE_IMAGE_PATH = "output.png"
 
-REMOTE_PATH = "https://storage.googleapis.com/ailia-models/moirai/v2/"
+REMOTE_PATH = "https://storage.googleapis.com/ailia-models/moirai/"
 
 SIZE_TO_FILES = {
     "small": ("moirai-1.0-R-small.onnx", "moirai-1.0-R-small.onnx.prototxt"),
