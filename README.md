@@ -845,8 +845,8 @@ If you would like to try on your computer:
 |------------:|:------------:|:------------:|:------------:|:------------:|:------------:|
 | [informer2020](/time_series_forecasting/informer2020/) | [Informer: Beyond Efficient Transformer for Long Sequence Time-Series Forecasting (AAAI'21 Best Paper)](https://github.com/zhouhaoyi/Informer2020) | Pytorch | 1.2.10 and later | Dec 2020 ||
 | [timesfm](/time_series_forecasting/timesfm/) | [TimesFM](https://github.com/google-research/timesfm) | Pytorch | 1.2.16 and later | Oct 2023 | [JP](https://tech.ailia.ai/timesfm-%E6%99%82%E7%B3%BB%E5%88%97%E4%BA%88%E6%B8%AC%E3%81%AE%E5%9F%BA%E7%9B%A4%E3%83%A2%E3%83%87%E3%83%AB-0a11fdefa319) |
-| [moirai](/time_series_forecasting/moirai/) | [Moirai (uni2ts)](https://github.com/SalesforceAIResearch/uni2ts) | Pytorch | 1.2.16 and later | Feb 2024 ||
-| [chronos2](/time_series_forecasting/chronos2/) | [Chronos-2](https://github.com/amazon-science/chronos-forecasting) | Pytorch | 1.2.16 and later | Oct 2025 ||
+| [moirai](/time_series_forecasting/moirai/) | [Moirai (uni2ts)](https://github.com/SalesforceAIResearch/uni2ts) | Pytorch | 1.2.14 and later | Feb 2024 ||
+| [chronos2](/time_series_forecasting/chronos2/) | [Chronos-2](https://github.com/amazon-science/chronos-forecasting) | Pytorch | 1.2.14 and later | Oct 2025 ||
 
 ## Vehicle recognition
 
