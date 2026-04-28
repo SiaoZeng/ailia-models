@@ -170,16 +170,28 @@ not encode the mixture-component metadata.
 ## Re-exporting the model
 
 If you want to regenerate the ONNX file (for example after upgrading uni2ts),
-use the script under `export/`:
+use the scripts under `export/`. There is one script per Moirai-1.x family:
+
+- `export_moirai_1_0.py` — Apache-2.0 era weights, pinned by revision
+  hash. This is what the shipped ONNX file is built from.
+- `export_moirai_1_1.py` — Moirai-1.1-R weights from the current
+  `main` revision (CC-BY-NC-4.0). For research / non-commercial
+  evaluation only.
 
 ```bash
 $ cd export
-$ python3 export_moirai.py --size small  --output_dir ..
-$ python3 export_moirai.py --size base   --output_dir ..
-$ python3 export_moirai.py --size large  --output_dir ..
+# Moirai-1.0-R (Apache-2.0)
+$ python3 export_moirai_1_0.py --size small  --output_dir ..
+$ python3 export_moirai_1_0.py --size base   --output_dir ..
+$ python3 export_moirai_1_0.py --size large  --output_dir ..
+
+# Moirai-1.1-R (CC-BY-NC-4.0)
+$ python3 export_moirai_1_1.py --size small  --output_dir ..
+$ python3 export_moirai_1_1.py --size base   --output_dir ..
+$ python3 export_moirai_1_1.py --size large  --output_dir ..
 ```
 
-The export script pins the download to the Apache-2.0 revision listed in
+The 1.0 export pins the download to the Apache-2.0 revision listed in
 [the table above](#weights-provenance--license).
 
 The accompanying `.prototxt` files are produced by ailia's
