@@ -70,10 +70,14 @@ You can switch between the three publicly released Moirai-1.0-R sizes (each
 corresponds to a separate ONNX file):
 
 ```bash
-$ python3 moirai.py --size small   # default, 54 MB
+$ python3 moirai.py --size small   # 54 MB
 $ python3 moirai.py --size base    # 350 MB
-$ python3 moirai.py --size large   # 1.2 GB
+$ python3 moirai.py --size large   # default, 1.2 GB
 ```
+
+`large` is the default because Moirai-1.0-R's covariate utilisation is
+weakest at the small size; see the
+[patch-size table](#choosing---patch_size-when-using-covariates) below.
 
 The forecast horizon and the size of the past context window are configurable
 with `--prediction_len` and `--context_len`. The Moirai patch size can either

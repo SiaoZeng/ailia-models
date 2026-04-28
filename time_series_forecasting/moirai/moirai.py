@@ -56,7 +56,7 @@ parser.add_argument("-i", "--input", type=str, default=DATA_PATH)
 parser.add_argument(
     "--size",
     type=str,
-    default="small",
+    default="large",
     choices=list(SIZE_TO_FILES.keys()),
     help="Moirai-1.0-R model size",
 )
