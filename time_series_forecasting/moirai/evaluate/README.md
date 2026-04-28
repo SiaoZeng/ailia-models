@@ -87,26 +87,6 @@ removed by the diverse holiday calendar), **only Chronos-2's covariate
 fusion path actually works**. Moirai's `feat_dynamic_real` channel is
 effectively a hint at best.
 
-### MAE by point estimator
-
-The summary above uses the median of each model's predictive distribution
-as the point forecast. The Moirai-1.x sample distribution at irregular
-holidays is right-skewed (the holiday spike sits in the upper tail), so
-``median`` clips it. The histogram-mode estimator is slightly more
-aggressive and recovers ~1.3 MAE points for Moirai-1.x; mean is
-indistinguishable from median, and Chronos-2 / Moirai-2.0 are barely
-affected since their distributions are already centred.
-
-| Model | median | mean | mode |
-|---|--:|--:|--:|
-| Moirai-1.0-R-large (p=32) | 13.19 | 13.27 | **11.86** |
-| Moirai-1.1-R-large (p=16) | 12.60 | 12.99 | **11.87** |
-| Moirai-2.0-R-small (p=16) | **7.82** | 7.99 | 8.01 |
-| Chronos-2 | 3.54 | 3.60 | **3.41** |
-
-(Pass `--point_estimate {median,mean,mode}` to switch the summary
-estimator; the secondary table comparing all three is always printed.)
-
 ## Takeaways
 
 - **Chronos-2 wins on every metric** — and it is Apache-2.0, so it can
@@ -133,9 +113,6 @@ Useful flags:
 - `--size_v1 {small,base,large}` — which Moirai-1.x size to load
   (default `large`)
 - `--patch_v10 / --patch_v11` — override patch sizes for 1.0/1.1-R
-- `--point_estimate {median,mean,mode}` — statistic used to summarise
-  the predictive distribution into the printed point forecast
-  (default `median`)
 - `--context_len`, `--prediction_len`, `--num_samples`, `--seed`
 - `--data PATH` — supply a different CSV; must contain `date`, the
   target column, and the listed `--feat` covariate columns
