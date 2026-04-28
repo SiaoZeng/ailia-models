@@ -177,8 +177,14 @@ $ cd export
 $ python3 export_moirai.py --size small  --output_dir ..
 $ python3 export_moirai.py --size base   --output_dir ..
 $ python3 export_moirai.py --size large  --output_dir ..
-$ python3 onnx2prototxt.py ../moirai-1.0-R-small.onnx ../moirai-1.0-R-base.onnx ../moirai-1.0-R-large.onnx
 ```
 
 The export script pins the download to the Apache-2.0 revision listed in
 [the table above](#weights-provenance--license).
+
+The accompanying `.prototxt` files are produced by ailia's
+[onnx2prototxt](https://github.com/ailia-ai/export-to-onnx/blob/master/onnx2prototxt.py):
+
+```bash
+$ python3 onnx2prototxt.py ../moirai-1.0-R-small.onnx ../moirai-1.0-R-base.onnx ../moirai-1.0-R-large.onnx
+```
