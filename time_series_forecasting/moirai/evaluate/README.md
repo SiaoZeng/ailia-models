@@ -37,13 +37,38 @@ shaded area is the 80% prediction interval.
 
 | Model | License | MAE | RMSE | PI80 coverage | Median gap (holiday − non-holiday) |
 |---|---|--:|--:|--:|--:|
-| Moirai-1.0-R-large (p=32) | **Apache-2.0** | 10.03 | 12.58 | 65% | +5.26 |
-| Moirai-1.1-R-large (p=16) | CC-BY-NC-4.0 | 8.28 | 12.06 | 70% | +10.52 |
-| Moirai-2.0-R-small (p=16) | CC-BY-NC-4.0 | 5.70 | 10.51 | 80% | +16.26 |
-| **Chronos-2** | **Apache-2.0** | **5.53** | **10.13** | **85%** | **+16.97** |
+| Moirai-1.0-R-large (p=32) | **Apache-2.0** | 10.39 | 13.04 | 65% | +4.37 |
+| Moirai-1.1-R-large (p=16) | CC-BY-NC-4.0 | 8.79 | 12.14 | 70% | +8.24 |
+| Moirai-2.0-R-small (p=16) | CC-BY-NC-4.0 | 6.25 | 10.88 | 80% | +14.95 |
+| **Chronos-2** | **Apache-2.0** | **5.30** | **7.77** | **85%** | **+19.97** |
 
 Reference: observed `sales` gap between holiday and non-holiday days in
-the past 200 days of context is **+22.34**.
+the past 200 days of context is **+23.61**.
+
+### Per-holiday-type breakdown
+
+The 20-day prediction window contains two kinds of `is_holiday=1` days:
+6 weekend days (Sat/Sun) and 2 mid-week irregular days (Tue/Wed —
+Christmas Eve and Christmas in the synthetic data). Foundation models
+typically pick up the weekend pattern from the target's own auto-
+correlation, but capturing the irregular one requires actually trusting
+the future `is_holiday` covariate. Splitting the gap by holiday type:
+
+| Model | Irregular gap (Tue/Wed) | Weekend gap (Sat/Sun) |
+|---|--:|--:|
+| Moirai-1.0-R-large (p=32) | +1.08 | +5.47 |
+| Moirai-1.1-R-large (p=16) | -1.49 | +11.48 |
+| Moirai-2.0-R-small | +0.51 | +19.77 |
+| **Chronos-2** | **+14.41** | +21.83 |
+| Ground truth | +34.69 | +23.85 |
+
+Among the four, **only Chronos-2 captures the irregular mid-week
+holiday spikes** (~42% of the true effect), while the Moirai family
+basically ignores the future `is_holiday` signal once the date does not
+match Sat/Sun (or Mon, the only weekday on which mid-week holidays
+appear in the 200-day context). This is a structural artefact of how
+each model fuses covariates with the target time-series, not a defect
+of the export.
 
 ## Takeaways
 
