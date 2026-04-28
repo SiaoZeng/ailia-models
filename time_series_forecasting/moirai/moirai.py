@@ -104,18 +104,6 @@ parser.add_argument(
     help="Number of samples drawn from the predictive distribution",
 )
 parser.add_argument(
-    "--point_estimate",
-    type=str,
-    default="median",
-    choices=["median", "mean", "mode"],
-    help=(
-        "Statistic used to summarise the predictive distribution into a "
-        "single point forecast. Moirai's sample distribution at irregular-"
-        "holiday positions is right-skewed, so 'mode' typically captures "
-        "more of the holiday spike than the default 'median'."
-    ),
-)
-parser.add_argument(
     "--seed",
     type=int,
     default=0,
@@ -489,13 +477,10 @@ def draw_result(
     gs = fig.add_gridspec(n_rows, 1, hspace=0.35)
 
     n_hist = len(history)
-    # Backward-compat: accept "median" key as the point forecast.
-    point_key = "point" if "point" in preds_quantiles else "median"
-    point = preds_quantiles[point_key]
-    point_label = preds_quantiles.get("point_label", "median")
-    n_pred = point.shape[-1]
+    n_pred = preds_quantiles["median"].shape[-1]
     x_hist = np.arange(n_hist)
     x_pred = np.arange(n_hist, n_hist + n_pred)
+    median = preds_quantiles["median"]
     q10 = preds_quantiles["q10"]
     q90 = preds_quantiles["q90"]
 
@@ -511,8 +496,7 @@ def draw_result(
             linestyle="--",
             alpha=0.5,
         )
-    ax.plot(x_pred, point, label=f"Forecast ({point_label})",
-            color="red", linestyle="--")
+    ax.plot(x_pred, median, label="Forecast (median)", color="red", linestyle="--")
     ax.fill_between(x_pred, q10, q90, color="red", alpha=0.2, label="80% interval")
     ax.set_ylabel(target_name)
     ax.set_title("Overview")
@@ -534,7 +518,7 @@ def draw_result(
             alpha=0.5,
             label="Ground Truth",
         )
-    ax.plot(xp, point, "--", color="red", label=f"Forecast ({point_label})")
+    ax.plot(xp, median, "--", color="red", label="Forecast (median)")
     ax.fill_between(xp, q10, q90, color="red", alpha=0.2, label="80% interval")
     if holiday_band is not None:
         name, vals = holiday_band
@@ -639,26 +623,9 @@ def time_series_forecasting(net):
         rng, outputs, n_ctx, n_pred, patch_size, prediction_len, args.num_samples,
     )
 
+    median = np.quantile(samples, 0.5, axis=0)
     q10 = np.quantile(samples, 0.1, axis=0)
     q90 = np.quantile(samples, 0.9, axis=0)
-    if args.point_estimate == "median":
-        point = np.quantile(samples, 0.5, axis=0)
-    elif args.point_estimate == "mean":
-        point = np.mean(samples, axis=0)
-    elif args.point_estimate == "mode":
-        # Histogram-based mode estimate per timestep. Moirai's sample
-        # distribution at irregular-holiday positions is right-skewed,
-        # so the mode lives higher than the median.
-        n_bins = 20
-        T = samples.shape[1]
-        point = np.empty(T, dtype=samples.dtype)
-        for t in range(T):
-            counts, edges = np.histogram(samples[:, t], bins=n_bins)
-            best = int(np.argmax(counts))
-            point[t] = 0.5 * (edges[best] + edges[best + 1])
-    else:
-        raise ValueError(f"unknown point_estimate: {args.point_estimate}")
-    logger.info(f"point estimate: {args.point_estimate}")
 
     truth_vals = truth_df[target].values
 
@@ -675,8 +642,7 @@ def time_series_forecasting(net):
         draw_result(
             history_vals,
             truth_vals,
-            {"point": point, "q10": q10, "q90": q90,
-             "point_label": args.point_estimate},
+            {"median": median, "q10": q10, "q90": q90},
             savepath,
             target_name=target,
             covariates=covariates,
@@ -686,7 +652,7 @@ def time_series_forecasting(net):
         import json
 
         out = {
-            args.point_estimate: point.tolist(),
+            "median": median.tolist(),
             "q10": q10.tolist(),
             "q90": q90.tolist(),
         }

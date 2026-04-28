@@ -96,17 +96,6 @@ estimates at the cost of inference time:
 $ python3 moirai.py --num_samples 200 --seed 0
 ```
 
-The point forecast is summarised from the sample distribution by
-`--point_estimate {median, mean, mode}` (default `median`). Moirai's
-sample distribution at irregular-holiday positions is right-skewed
-(the holiday spike sits in the upper tail), so for covariate-driven
-benchmarks `mode` typically captures the spike better and improves
-MAE by ~1.3 points; `median` and `mean` are usually within 0.5:
-
-```bash
-$ python3 moirai.py --point_estimate mode
-```
-
 By default the ailia SDK is used. Pass `--onnx` to use ONNX Runtime instead.
 
 ### Choosing `--patch_size` when using covariates
