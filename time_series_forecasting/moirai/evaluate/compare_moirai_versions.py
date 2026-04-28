@@ -1,9 +1,9 @@
-"""Compare zero-shot forecasts from Moirai-1.0-R / Moirai-1.1-R / Moirai-2.0-R
-on the same konbini sample data.
+"""Compare zero-shot forecasts from Moirai-1.0-R / Moirai-1.1-R /
+Moirai-2.0-R / Chronos-2 on the same konbini sample data.
 
 This script does **not** use the exported ONNX weights — it loads each model
-through `uni2ts` directly. The goal is to compare model families, not to
-benchmark the ONNX export.
+directly via uni2ts (Moirai) or chronos-forecasting (Chronos-2). The goal is
+to compare model families, not to benchmark the ONNX export.
 
 Notes on weights / licenses
 ---------------------------
@@ -12,9 +12,12 @@ Notes on weights / licenses
   ``model.ckpt`` from these revisions.
 - Moirai-1.1-R and Moirai-2.0-R weights are CC-BY-NC-4.0; they are pulled
   here only for non-commercial side-by-side analysis.
+- Chronos-2 (``amazon/chronos-2``) is **Apache-2.0** and can be used
+  alongside the Apache-2.0 Moirai-1.0-R weights without a license switch.
 
-We use ``--size large`` for Moirai-1.x (the largest publicly released size)
-and the only public size ``small`` for Moirai-2.0-R.
+We use ``--size large`` for Moirai-1.x (the largest publicly released size).
+Moirai-2.0-R is only published in ``small``; Chronos-2 ships as a single
+~120M-parameter model (no size variants).
 """
 
 import argparse
@@ -110,6 +113,43 @@ def forecast_moirai_v1(module, df_in, target, feat_cols, ctx, pred, patch_size, 
     )
 
 
+def forecast_chronos2(df_in, df_index, target, feat_cols, pred, ctx, seed):
+    """Run a Chronos-2 forecast.
+
+    Chronos-2 directly produces quantile forecasts. We expose the 0.1 / 0.5
+    / 0.9 quantiles and treat the median as the point estimate.
+    """
+    from chronos import Chronos2Pipeline
+
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    # Format data into the long DataFrame Chronos-2 expects.
+    history = df_in.iloc[:-pred].copy()
+    history = history.rename(columns={target: "target"})
+    history["timestamp"] = df_index[: len(history)]
+    history["item_id"] = "series"
+
+    future = df_in.iloc[-pred:][feat_cols].copy() if feat_cols else pd.DataFrame()
+    future["timestamp"] = df_index[-pred:]
+    future["item_id"] = "series"
+
+    pipe = Chronos2Pipeline.from_pretrained("amazon/chronos-2", device_map="cpu")
+    result = pipe.predict_df(
+        df=history,
+        future_df=future if feat_cols else None,
+        id_column="item_id",
+        timestamp_column="timestamp",
+        target="target",
+        prediction_length=pred,
+        context_length=ctx,
+    )
+    median = result["0.5"].to_numpy()
+    q10 = result["0.1"].to_numpy()
+    q90 = result["0.9"].to_numpy()
+    return median, q10, q90
+
+
 def forecast_moirai_v2(module, df_in, target, feat_cols, ctx, pred, num_samples, seed):
     """Run a Moirai-2.0-R forecast.
 
@@ -195,6 +235,7 @@ def main():
     df = df.set_index("date")
     feat_cols = [c.strip() for c in args.feat.split(",") if c.strip()]
     df_in = df[[args.target] + feat_cols].iloc[-(args.context_len + args.prediction_len):]
+    df_index = df_in.index
     truth = df[args.target].iloc[-args.prediction_len:].values
     history = df[args.target].iloc[-(args.context_len + args.prediction_len):-args.prediction_len].values
     future_holiday = (
@@ -251,6 +292,18 @@ def main():
         "metrics": metrics(median, q10, q90, truth),
     })
     del m2
+
+    # Chronos-2 (Apache-2.0) — single published model, ~120M params.
+    print("--- Chronos-2 (Apache-2.0, amazon/chronos-2) ---", flush=True)
+    median, q10, q90 = forecast_chronos2(
+        df_in, df_index, args.target, feat_cols,
+        args.prediction_len, args.context_len, args.seed,
+    )
+    runs.append({
+        "name": "Chronos-2 (Apache-2.0, amazon/chronos-2)",
+        "median": median, "q10": q10, "q90": q90,
+        "metrics": metrics(median, q10, q90, truth),
+    })
 
     # Print metrics table.
     print()
