@@ -1,3 +1,5 @@
+import glob
+import os
 import sys
 import time
 from logging import getLogger
@@ -20,10 +22,21 @@ logger = getLogger(__name__)
 # Parameters
 # ======================
 
+# Grounding models (image + video init)
 WEIGHT_ENC_PATH = "sam3.1_image_encoder.onnx"
 WEIGHT_GND_PATH = "sam3.1_grounding.onnx"
 MODEL_ENC_PATH = "sam3.1_image_encoder.onnx.prototxt"
 MODEL_GND_PATH = "sam3.1_grounding.onnx.prototxt"
+
+# Tracker models (video mode)
+WEIGHT_PE_PATH = "sam3.1_prompt_encoder.onnx"
+WEIGHT_DEC_PATH = "sam3.1_mask_decoder.onnx"
+WEIGHT_TDEC_PATH = (
+    "sam3.1_tracking_mask_decoder.onnx"  # MultiplexMaskDecoder for tracking
+)
+WEIGHT_MENC_PATH = "sam3.1_memory_encoder.onnx"
+WEIGHT_MATTN_PATH = "sam3.1_memory_attention.onnx"
+
 BPE_PATH = "bpe_simple_vocab_16e6.txt.gz"
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/sam3p1/"
 
@@ -57,7 +70,7 @@ parser.add_argument(
     type=float,
     metavar=("X1", "Y1", "X2", "Y2"),
     action="append",
-    help="Bounding box visual prompt in pixel coords [x1 y1 x2 y2]. Can be specified multiple times.",
+    help="Bounding box prompt in pixel coords [x1 y1 x2 y2].",
 )
 parser.add_argument(
     "--box_label",
@@ -67,8 +80,90 @@ parser.add_argument(
     metavar="LABEL",
     help="Label per --box (1=positive, 0=negative). Defaults to all positive.",
 )
+parser.add_argument(
+    "--point",
+    nargs=2,
+    type=float,
+    metavar=("X", "Y"),
+    action="append",
+    help="Point prompt in pixel coords [x y] for video tracking. Can be specified multiple times.",
+)
+parser.add_argument(
+    "--point_label",
+    nargs="+",
+    type=int,
+    default=None,
+    metavar="LABEL",
+    help="Label per --point (1=positive, 0=negative). Defaults to all positive.",
+)
 parser.add_argument("--onnx", action="store_true", help="execute onnxruntime version.")
+parser.add_argument(
+    "--tracking",
+    action="store_true",
+    help="Enable SAM3.1 memory-based tracking mode (requires --video).",
+)
 args = update_parser(parser)
+
+
+# ======================
+# Video Utilities
+# ======================
+
+
+class FrameDirCapture:
+    """cv2.VideoCapture-compatible wrapper for a directory of image files.
+
+    Files are sorted by name, so zero-padded filenames (e.g. 000001.jpg) work correctly.
+    """
+
+    _EXTS = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.JPG", "*.JPEG", "*.PNG", "*.BMP")
+
+    def __init__(self, dir_path):
+        files = []
+        for ext in self._EXTS:
+            files.extend(glob.glob(os.path.join(dir_path, ext)))
+
+        def _sort_key(p):
+            stem = os.path.splitext(os.path.basename(p))[0]
+            try:
+                return (0, int(stem))
+            except ValueError:
+                return (1, stem)
+
+        self._files = sorted(set(files), key=_sort_key)
+        self._idx = 0
+        if self._files:
+            first = cv2.imread(self._files[0])
+            self._h, self._w = (
+                (first.shape[0], first.shape[1]) if first is not None else (0, 0)
+            )
+        else:
+            self._h = self._w = 0
+
+    def isOpened(self):
+        return len(self._files) > 0
+
+    def read(self):
+        if self._idx >= len(self._files):
+            return False, None
+        frame = cv2.imread(self._files[self._idx])
+        self._idx += 1
+        if frame is None:
+            return False, None
+        return True, frame
+
+    def get(self, prop_id):
+        if prop_id == cv2.CAP_PROP_FRAME_HEIGHT:
+            return float(self._h)
+        if prop_id == cv2.CAP_PROP_FRAME_WIDTH:
+            return float(self._w)
+        if prop_id == cv2.CAP_PROP_FRAME_COUNT:
+            return float(len(self._files))
+        return 0.0
+
+    def release(self):
+        pass
+
 
 # ======================
 # Tokenizer
@@ -138,7 +233,7 @@ def draw_predictions(image, boxes, scores, masks, label):
 
 
 # ======================
-# Main functions
+# Grounding functions
 # ======================
 
 
@@ -189,15 +284,7 @@ def postprocess(
 
 
 def build_box_inputs(boxes, box_labels, orig_h, orig_w):
-    """Convert pixel [x1,y1,x2,y2] boxes to the tensors expected by sam3.1_grounding.onnx.
-
-    SAM3.1 uses dynamic N (no slot padding required).
-
-    Returns:
-        box_coords     : float32 (N, 1, 4)  [cx,cy,w,h] normalized
-        box_labels_arr : int64   (N, 1)     1=positive, 0=negative
-        box_mask       : bool    (1, N)     all False (all slots valid)
-    """
+    """Convert pixel [x1,y1,x2,y2] boxes to the tensors expected by sam3.1_grounding.onnx."""
     n = len(boxes)
     coords = np.array(boxes, dtype=np.float32)  # (N, 4) [x1,y1,x2,y2]
     cx = (coords[:, 0] + coords[:, 2]) / 2.0 / orig_w
@@ -214,40 +301,34 @@ def build_box_inputs(boxes, box_labels, orig_h, orig_w):
         lbls = np.array(box_labels[:n], dtype=np.int64)
     box_labels_arr = lbls[:, np.newaxis]  # (N, 1)
 
-    box_mask = np.zeros((1, n), dtype=bool)  # all valid
+    box_mask = np.zeros((1, n), dtype=bool)
 
     return box_coords, box_labels_arr, box_mask
 
 
-def predict(models, img, caption, threshold, boxes=None, box_labels=None):
-    orig_h, orig_w = img.shape[:2]
-    img_input = preprocess(img)
+def run_encoder(models, img_input):
+    """Run image encoder.
 
-    use_visual = boxes is not None and len(boxes) > 0
-
-    if use_visual:
-        text_tokens = tokenize("visual")
-        box_coords, box_labels_arr, box_mask = build_box_inputs(
-            boxes, box_labels, orig_h, orig_w
-        )
-    else:
-        text_tokens = tokenize(caption)
-        # SAM3.1 grounding accepts N=0 empty arrays for text-only mode
-        box_coords = np.zeros((0, 1, 4), dtype=np.float32)
-        box_labels_arr = np.zeros((0, 1), dtype=np.int64)
-        box_mask = np.zeros((1, 0), dtype=bool)
-
+    Returns 10 outputs:
+      [0] fpn0,      [1] fpn1,      [2] fpn2      — detection path (for grounding)
+      [3] pos0,      [4] pos1,      [5] pos2
+      [6] prop_fpn0, [7] prop_fpn1, [8] prop_fpn2 — propagation path (for tracking)
+      [9] prop_pos2
+    """
     encoder = models["encoder"]
-    grounder = models["grounder"]
-
     if not args.onnx:
         enc_out = encoder.predict([img_input])
     else:
         enc_out = encoder.run(None, {"image": img_input})
-    fpn0, fpn1, fpn2, pos0, pos1, pos2 = enc_out
+    return enc_out
 
+
+def run_grounding(
+    models, fpn0, fpn1, fpn2, pos2, text_tokens, box_coords, box_labels_arr, box_mask
+):
+    """Run grounding model."""
+    grounder = models["grounder"]
     if not args.onnx:
-        # Input order matches sam3.1_grounding.onnx: fpn0,fpn1,fpn2,pos2,text_tokens,box_coords,box_labels,box_mask
         gnd_out = grounder.predict(
             [fpn0, fpn1, fpn2, pos2, text_tokens, box_coords, box_labels_arr, box_mask]
         )
@@ -265,7 +346,40 @@ def predict(models, img, caption, threshold, boxes=None, box_labels=None):
                 "box_mask": box_mask,
             },
         )
+    return gnd_out  # pred_masks, pred_boxes, pred_logits, presence_logit_dec
 
+
+def predict(models, img, caption, threshold, boxes=None, box_labels=None):
+    orig_h, orig_w = img.shape[:2]
+    img_input = preprocess(img)
+
+    use_visual = boxes is not None and len(boxes) > 0
+
+    if use_visual:
+        text_tokens = tokenize("visual")
+        box_coords, box_labels_arr, box_mask = build_box_inputs(
+            boxes, box_labels, orig_h, orig_w
+        )
+    else:
+        text_tokens = tokenize(caption)
+        box_coords = np.zeros((0, 1, 4), dtype=np.float32)
+        box_labels_arr = np.zeros((0, 1), dtype=np.int64)
+        box_mask = np.zeros((1, 0), dtype=bool)
+
+    enc_out = run_encoder(models, img_input)
+    fpn0, fpn1, fpn2, pos0, pos1, pos2, *_ = enc_out
+
+    gnd_out = run_grounding(
+        models,
+        fpn0,
+        fpn1,
+        fpn2,
+        pos2,
+        text_tokens,
+        box_coords,
+        box_labels_arr,
+        box_mask,
+    )
     pred_masks, pred_boxes, pred_logits, presence_logit_dec = gnd_out
 
     return postprocess(
@@ -277,6 +391,25 @@ def predict(models, img, caption, threshold, boxes=None, box_labels=None):
         orig_w,
         threshold,
     )
+
+
+# ======================
+# Tracking core
+# ======================
+
+
+def init_tracking(models, frame, memory_banks, maskmem_tpos_enc, no_obj_params=None):
+    orig_h, orig_w = frame.shape[:2]
+    img_input = preprocess(frame)
+    enc_out = run_encoder(models, img_input)
+    fpn0, fpn1, fpn2, pos0, pos1, pos2, prop_fpn0, prop_fpn1, prop_fpn2, prop_pos2 = (
+        enc_out
+    )
+
+
+# ======================
+# Main functions
+# ======================
 
 
 def recognize_from_image(models):
@@ -335,6 +468,7 @@ def recognize_from_image(models):
 
 
 def recognize_from_video(models):
+    """Per-frame grounding on video — runs predict() independently for each frame."""
     caption = args.caption
     threshold = args.threshold
     boxes = args.box
@@ -344,7 +478,10 @@ def recognize_from_video(models):
     display_label = "visual" if use_visual else caption
 
     video_file = args.video if args.video else args.input[0]
-    capture = get_capture(video_file)
+    if os.path.isdir(video_file):
+        capture = FrameDirCapture(video_file)
+    else:
+        capture = get_capture(video_file)
     assert capture.isOpened(), "Cannot capture source"
 
     if args.savepath != SAVE_IMAGE_PATH:
@@ -365,6 +502,7 @@ def recognize_from_video(models):
         scores, det_boxes, masks = predict(
             models, frame, caption, threshold, boxes, box_labels
         )
+
         res_img = frame.copy()
         res_img = draw_predictions(res_img, det_boxes, scores, masks, display_label)
 
@@ -382,9 +520,82 @@ def recognize_from_video(models):
     logger.info("Script finished successfully.")
 
 
+def recognize_from_tracking(models):
+    """SAM3.1 memory-based multi-person tracking mode (--tracking flag)."""
+    video_src = args.video if args.video else args.input[0]
+    try:
+        int(video_src)
+        logger.error(
+            "Webcam input is not supported in tracking mode. Specify a video file or image directory."
+        )
+        sys.exit(1)
+    except (ValueError, TypeError):
+        pass
+
+    if os.path.isdir(video_src):
+        capture = FrameDirCapture(video_src)
+    else:
+        capture = get_capture(video_src)
+    assert capture.isOpened(), "Cannot capture source"
+
+    if args.savepath != SAVE_IMAGE_PATH:
+        f_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        f_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        writer = get_writer(args.savepath, f_h, f_w)
+    else:
+        writer = None
+
+    frame_idx = 0
+    frame_shown = False
+
+    saving_to_file = args.savepath != SAVE_IMAGE_PATH
+    has_display = bool(os.environ.get("DISPLAY")) and not saving_to_file
+
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    pbar = tqdm(
+        total=total_frames if total_frames > 0 else None, desc="Tracking", unit="frame"
+    )
+
+    while True:
+        ret, frame = capture.read()
+        if not ret:
+            break
+        if has_display and (cv2.waitKey(1) & 0xFF == ord("q")):
+            break
+        if (
+            has_display
+            and frame_shown
+            and cv2.getWindowProperty("frame", cv2.WND_PROP_VISIBLE) == 0
+        ):
+            break
+
+
+        res_img = frame.copy()
+
+        if has_display:
+            cv2.imshow("frame", res_img)
+            frame_shown = True
+        frame_idx += 1
+        pbar.update(1)
+
+        if writer is not None:
+            writer.write(res_img.astype(np.uint8))
+
+    pbar.close()
+    capture.release()
+    if has_display:
+        cv2.destroyAllWindows()
+    if writer is not None:
+        writer.release()
+
+    logger.info("Script finished successfully.")
+
+
 def main():
     check_and_download_models(WEIGHT_ENC_PATH, MODEL_ENC_PATH, REMOTE_PATH)
     check_and_download_models(WEIGHT_GND_PATH, MODEL_GND_PATH, REMOTE_PATH)
+
+    use_tracking = args.tracking
 
     env_id = args.env_id
 
@@ -401,6 +612,32 @@ def main():
         grounder = ailia.Net(
             MODEL_GND_PATH, WEIGHT_GND_PATH, env_id=env_id, memory_mode=memory_mode
         )
+        models = dict(encoder=encoder, grounder=grounder)
+        if use_tracking:
+            models["prompt_enc"] = ailia.Net(
+                MODEL_PE_PATH, WEIGHT_PE_PATH, env_id=env_id, memory_mode=memory_mode
+            )
+            models["mask_dec"] = ailia.Net(
+                MODEL_DEC_PATH, WEIGHT_DEC_PATH, env_id=env_id, memory_mode=memory_mode
+            )
+            models["track_dec"] = ailia.Net(
+                MODEL_TDEC_PATH,
+                WEIGHT_TDEC_PATH,
+                env_id=env_id,
+                memory_mode=memory_mode,
+            )
+            models["mem_enc"] = ailia.Net(
+                MODEL_MENC_PATH,
+                WEIGHT_MENC_PATH,
+                env_id=env_id,
+                memory_mode=memory_mode,
+            )
+            models["mem_attn"] = ailia.Net(
+                MODEL_MATTN_PATH,
+                WEIGHT_MATTN_PATH,
+                env_id=env_id,
+                memory_mode=memory_mode,
+            )
     else:
         import onnxruntime
 
@@ -410,12 +647,50 @@ def main():
             if cuda
             else ["CPUExecutionProvider"]
         )
-        encoder = onnxruntime.InferenceSession(WEIGHT_ENC_PATH, providers=providers)
-        grounder = onnxruntime.InferenceSession(WEIGHT_GND_PATH, providers=providers)
+        models = {}
+        models["encoder"] = LazyModel(
+            lambda: onnxruntime.InferenceSession(WEIGHT_ENC_PATH, providers=providers),
+            "encoder",
+        )
+        models["grounder"] = LazyModel(
+            lambda: onnxruntime.InferenceSession(WEIGHT_GND_PATH, providers=providers),
+            "grounder",
+        )
+        if use_tracking:
+            models["prompt_enc"] = LazyModel(
+                lambda: onnxruntime.InferenceSession(
+                    WEIGHT_PE_PATH, providers=providers
+                ),
+                "prompt_enc",
+            )
+            models["mask_dec"] = LazyModel(
+                lambda: onnxruntime.InferenceSession(
+                    WEIGHT_DEC_PATH, providers=providers
+                ),
+                "mask_dec",
+            )
+            models["track_dec"] = LazyModel(
+                lambda: onnxruntime.InferenceSession(
+                    WEIGHT_TDEC_PATH, providers=providers
+                ),
+                "track_dec",
+            )
+            models["mem_enc"] = LazyModel(
+                lambda: onnxruntime.InferenceSession(
+                    WEIGHT_MENC_PATH, providers=providers
+                ),
+                "mem_enc",
+            )
+            models["mem_attn"] = LazyModel(
+                lambda: onnxruntime.InferenceSession(
+                    WEIGHT_MATTN_PATH, providers=providers
+                ),
+                "mem_attn",
+            )
 
-    models = dict(encoder=encoder, grounder=grounder)
-
-    if args.video is not None:
+    if args.tracking:
+        recognize_from_tracking(models)
+    elif args.video is not None:
         recognize_from_video(models)
     else:
         recognize_from_image(models)
