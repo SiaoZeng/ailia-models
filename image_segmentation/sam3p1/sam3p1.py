@@ -7,14 +7,16 @@ from logging import getLogger
 import ailia
 import cv2
 import numpy as np
+from PIL import Image
+from tqdm import tqdm
 
 sys.path.append("../../util")
-from arg_utils import get_base_parser, get_savepath, update_parser  # noqa
-from detector_utils import hsv_to_rgb, load_image  # noqa
-from math_utils import sigmoid  # noqa
-from model_utils import check_and_download_models  # noqa
-from simple_tokenizer import SimpleTokenizer  # noqa
-from webcamera_utils import get_capture, get_writer  # noqa
+from arg_utils import get_base_parser, get_savepath, update_parser
+from detector_utils import hsv_to_rgb, load_image
+from math_utils import sigmoid
+from model_utils import check_and_download_models
+from simple_tokenizer import SimpleTokenizer
+from webcamera_utils import get_capture, get_writer
 
 logger = getLogger(__name__)
 
@@ -106,7 +108,7 @@ args = update_parser(parser)
 
 
 # ======================
-# Video Utilities
+# Classes
 # ======================
 
 
@@ -165,6 +167,33 @@ class FrameDirCapture:
         pass
 
 
+class LazyModel:
+    """Defers model loading until the first predict/run call."""
+
+    def __init__(self, loader_fn, name=""):
+        self._loader_fn = loader_fn
+        self._name = name
+        self._net = None
+
+    def load(self):
+        if self._net is None:
+            if not args.tracking:
+                logger.info(f"Loading model: {self._name}")
+            self._net = self._loader_fn()
+        return self._net
+
+    def unload(self):
+        if self._net is not None:
+            self._net = None
+            gc.collect()
+
+    def predict(self, *args, **kwargs):
+        return self.load().predict(*args, **kwargs)
+
+    def run(self, *args, **kwargs):
+        return self.load().run(*args, **kwargs)
+
+
 # ======================
 # Tokenizer
 # ======================
@@ -193,7 +222,7 @@ def tokenize(text):
 
 
 # ======================
-# Secondary Functions
+# Visualization
 # ======================
 
 
@@ -205,7 +234,7 @@ def show_mask(mask, img, color):
     return np.clip(masked, 0, 255).astype(np.uint8)
 
 
-def draw_predictions(image, boxes, scores, masks, label):
+def draw_predictions(image, boxes, scores, masks, label, obj_ids=None):
     n = len(scores)
     colors = [hsv_to_rgb(int(256 * i / max(n, 1)), 200, 200) for i in range(n)]
 
@@ -217,7 +246,10 @@ def draw_predictions(image, boxes, scores, masks, label):
         x1, y1, x2, y2 = box.astype(int)
         color = colors[i][:3]
         cv2.rectangle(image, (x1, y1), (x2, y2), color=color, thickness=2)
-        text = f"{label}: {score:.2f}"
+        if obj_ids is not None:
+            text = f"(id={obj_ids[i]})"
+        else:
+            text = f"{label}: {score:.2f}"
         cv2.putText(
             image,
             text,
@@ -233,17 +265,46 @@ def draw_predictions(image, boxes, scores, masks, label):
 
 
 # ======================
+# Secondary Functions
+# ======================
+
+
+def build_box_inputs(boxes, box_labels, orig_h, orig_w):
+    """Convert pixel [x1,y1,x2,y2] boxes to the tensors expected by sam3.1_grounding.onnx."""
+    n = len(boxes)
+    coords = np.array(boxes, dtype=np.float32)  # (N, 4) [x1,y1,x2,y2]
+    cx = (coords[:, 0] + coords[:, 2]) / 2.0 / orig_w
+    cy = (coords[:, 1] + coords[:, 3]) / 2.0 / orig_h
+    bw = (coords[:, 2] - coords[:, 0]) / orig_w
+    bh = (coords[:, 3] - coords[:, 1]) / orig_h
+    cxcywh = np.stack([cx, cy, bw, bh], axis=-1)  # (N, 4)
+
+    box_coords = cxcywh[:, np.newaxis, :]  # (N, 1, 4)
+
+    if box_labels is None:
+        lbls = np.ones(n, dtype=np.int64)
+    else:
+        lbls = np.array(box_labels[:n], dtype=np.int64)
+    box_labels_arr = lbls[:, np.newaxis]  # (N, 1)
+
+    box_mask = np.zeros((1, n), dtype=bool)
+
+    return box_coords, box_labels_arr, box_mask
+
+
+# ======================
 # Grounding functions
 # ======================
 
 
 def preprocess(img):
-    img_rgb = img[:, :, ::-1].astype(np.float32) / 255.0  # BGR→RGB, [0,1]
-    img_resized = cv2.resize(
-        img_rgb, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_LINEAR
-    )
-    img_norm = (img_resized - 0.5) / 0.5  # mean=0.5, std=0.5
-    img_chw = img_norm.transpose(2, 0, 1)[None].astype(np.float32)  # [1,3,H,W]
+    img_rgb_u8 = img[:, :, ::-1]  # BGR→RGB, uint8
+    pil_img = Image.fromarray(img_rgb_u8)
+    pil_resized = pil_img.resize((IMAGE_SIZE, IMAGE_SIZE), Image.BILINEAR)
+    # /255 → float16 storage (quantize) → float16 normalize → float32
+    img_f16 = (np.array(pil_resized, dtype=np.float32) / 255.0).astype(np.float16)
+    img_norm = ((img_f16 - np.float16(0.5)) / np.float16(0.5)).astype(np.float32)
+    img_chw = img_norm.transpose(2, 0, 1)[None]  # [1,3,H,W]
     return img_chw
 
 
@@ -281,29 +342,6 @@ def postprocess(
     )
 
     return scores, xyxy, resized_masks
-
-
-def build_box_inputs(boxes, box_labels, orig_h, orig_w):
-    """Convert pixel [x1,y1,x2,y2] boxes to the tensors expected by sam3.1_grounding.onnx."""
-    n = len(boxes)
-    coords = np.array(boxes, dtype=np.float32)  # (N, 4) [x1,y1,x2,y2]
-    cx = (coords[:, 0] + coords[:, 2]) / 2.0 / orig_w
-    cy = (coords[:, 1] + coords[:, 3]) / 2.0 / orig_h
-    bw = (coords[:, 2] - coords[:, 0]) / orig_w
-    bh = (coords[:, 3] - coords[:, 1]) / orig_h
-    cxcywh = np.stack([cx, cy, bw, bh], axis=-1)  # (N, 4)
-
-    box_coords = cxcywh[:, np.newaxis, :]  # (N, 1, 4)
-
-    if box_labels is None:
-        lbls = np.ones(n, dtype=np.int64)
-    else:
-        lbls = np.array(box_labels[:n], dtype=np.int64)
-    box_labels_arr = lbls[:, np.newaxis]  # (N, 1)
-
-    box_mask = np.zeros((1, n), dtype=bool)
-
-    return box_coords, box_labels_arr, box_mask
 
 
 def run_encoder(models, img_input):
@@ -390,20 +428,6 @@ def predict(models, img, caption, threshold, boxes=None, box_labels=None):
         orig_h,
         orig_w,
         threshold,
-    )
-
-
-# ======================
-# Tracking core
-# ======================
-
-
-def init_tracking(models, frame, memory_banks, maskmem_tpos_enc, no_obj_params=None):
-    orig_h, orig_w = frame.shape[:2]
-    img_input = preprocess(frame)
-    enc_out = run_encoder(models, img_input)
-    fpn0, fpn1, fpn2, pos0, pos1, pos2, prop_fpn0, prop_fpn1, prop_fpn2, prop_pos2 = (
-        enc_out
     )
 
 
@@ -522,49 +546,63 @@ def recognize_from_video(models):
 
 def recognize_from_tracking(models):
     """SAM3.1 memory-based multi-person tracking mode (--tracking flag)."""
+    from video_tracking import (  # avoid circular import (video_tracking imports sam3p1)
+        Sam3Tracker,
+    )
+
     video_src = args.video if args.video else args.input[0]
     try:
         int(video_src)
-        logger.error(
-            "Webcam input is not supported in tracking mode. Specify a video file or image directory."
-        )
+        logger.error("Webcam input not supported in tracking mode.")
         sys.exit(1)
     except (ValueError, TypeError):
         pass
 
-    if os.path.isdir(video_src):
-        capture = FrameDirCapture(video_src)
+    if args.point:
+        logger.info("Tracking init: point prompt — %d point(s)", len(args.point))
+        display_label = "tracked"
+    elif args.box:
+        logger.info("Tracking init: box prompt")
+        display_label = "tracked"
     else:
-        capture = get_capture(video_src)
-    assert capture.isOpened(), "Cannot capture source"
+        logger.info("Tracking init: text grounding — caption='%s'", args.caption)
+        display_label = args.caption
 
-    if args.savepath != SAVE_IMAGE_PATH:
-        f_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        f_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-        writer = get_writer(args.savepath, f_h, f_w)
-    else:
-        writer = None
 
-    frame_idx = 0
-    frame_shown = False
+    logger.info("Loading frame paths from %s …", video_src)
+    frame_paths = collect_frame_paths(video_src)
+    logger.info("%d frames found", len(frame_paths))
 
+    frame0_img = cv2.imread(frame_paths[0])
+    f_h, f_w = frame0_img.shape[:2]
+    writer = (
+        get_writer(args.savepath, f_h, f_w)
+        if args.savepath != SAVE_IMAGE_PATH
+        else None
+    )
     saving_to_file = args.savepath != SAVE_IMAGE_PATH
     has_display = bool(os.environ.get("DISPLAY")) and not saving_to_file
+    frame_shown = [False]
 
-    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    pbar = tqdm(
-        total=total_frames if total_frames > 0 else None, desc="Tracking", unit="frame"
+    pbar = tqdm(total=len(frame_paths), desc="Tracking", unit="frame")
+
+    # Stage 1: add_prompt (frame 0)
+    tracker = Sam3Tracker(
+        models, maskmem_tpos_enc, no_obj_params, threshold=args.threshold
+    )
+    scores0, boxes0, masks0 = tracker.add_prompt(frame0_img, args.caption)
+
     )
 
-    while True:
-        ret, frame = capture.read()
-        if not ret:
-            break
+    # Stage 2: propagate_in_video (forward: frames 1 → N)
+    for frame_idx, scores, det_boxes, masks, obj_ids in tracker.propagate_in_video(
+        frame_paths, start_frame=1
+    ):
         if has_display and (cv2.waitKey(1) & 0xFF == ord("q")):
             break
         if (
             has_display
-            and frame_shown
+            and frame_shown[0]
             and cv2.getWindowProperty("frame", cv2.WND_PROP_VISIBLE) == 0
         ):
             break
