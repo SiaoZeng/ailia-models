@@ -568,6 +568,12 @@ def recognize_from_tracking(models):
         logger.info("Tracking init: text grounding — caption='%s'", args.caption)
         display_label = args.caption
 
+    maskmem_tpos_enc = np.load(TPOS_ENC_PATH)
+    no_obj_params = (
+        np.load(NO_OBJ_EMBED_PATH),
+        np.load(NO_OBJ_PTR_LINEAR_W_PATH),
+        np.load(NO_OBJ_PTR_LINEAR_B_PATH),
+    )
 
     logger.info("Loading frame paths from %s …", video_src)
     frame_paths = collect_frame_paths(video_src)
