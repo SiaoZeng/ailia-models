@@ -1,6 +1,8 @@
+import gc
 import glob
 import os
 import sys
+import tempfile
 import time
 from logging import getLogger
 
@@ -39,6 +41,24 @@ WEIGHT_TDEC_PATH = (
 WEIGHT_MENC_PATH = "sam3.1_memory_encoder.onnx"
 WEIGHT_MATTN_PATH = "sam3.1_memory_attention.onnx"
 
+WEIGHT_PROJ_PATH = "sam3.1_obj_ptr_proj.onnx"
+WEIGHT_IPROJ_PATH = "sam3.1_interactive_obj_ptr_proj.onnx"  # for init frame
+WEIGHT_TPOS_PATH = "sam3.1_obj_ptr_tpos_proj.onnx"
+MODEL_PE_PATH = "sam3.1_prompt_encoder.onnx.prototxt"
+MODEL_DEC_PATH = "sam3.1_mask_decoder.onnx.prototxt"
+MODEL_TDEC_PATH = "sam3.1_tracking_mask_decoder.onnx.prototxt"
+MODEL_MENC_PATH = "sam3.1_memory_encoder.onnx.prototxt"
+MODEL_MATTN_PATH = "sam3.1_memory_attention.onnx.prototxt"
+MODEL_PROJ_PATH = "sam3.1_obj_ptr_proj.onnx.prototxt"
+MODEL_IPROJ_PATH = "sam3.1_interactive_obj_ptr_proj.onnx.prototxt"
+MODEL_TPOS_PATH = "sam3.1_obj_ptr_tpos_proj.onnx.prototxt"
+
+TPOS_ENC_PATH = "sam3.1_maskmem_tpos_enc.npy"
+NO_OBJ_EMBED_PATH = "sam3.1_no_obj_embed_spatial.npy"
+NO_OBJ_PTR_LINEAR_W_PATH = "sam3.1_no_obj_ptr_linear_weight.npy"
+NO_OBJ_PTR_LINEAR_B_PATH = "sam3.1_no_obj_ptr_linear_bias.npy"
+VALID_EMBED_PATH = "sam3.1_output_valid_embed.npy"
+
 BPE_PATH = "bpe_simple_vocab_16e6.txt.gz"
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/sam3p1/"
 
@@ -48,6 +68,18 @@ SAVE_IMAGE_PATH = "output.png"
 IMAGE_SIZE = 1008
 CONTEXT_LENGTH = 32
 CONFIDENCE_THRESHOLD = 0.5
+
+# Tracker constants
+MEMORY_MASK_SIZE = 1152  # interpol_size for memory_encoder masks
+MASK_CHANNELS = 32  # multiplex_count(16) × 2
+HW = 5184  # 72 × 72
+NUM_MASKMEM = 7  # 1 conditioning + 6 non-cond frames
+MAX_OBJ_PTRS = 16
+MULTIPLEX_COUNT = 16  # number of object slots per bucket (SAM 3.1 multiplex)
+SIGMOID_SCALE_FOR_MEM_ENC = 2.0  # scale applied after sigmoid in memory encoder mask
+SIGMOID_BIAS_FOR_MEM_ENC = -1.0  # bias applied after sigmoid in memory encoder mask
+NO_OBJ_SCORE = -1024.0  # mask logit used when object is not appearing
+OBJ_SCORE_THRESHOLD = 0  # obj_score threshold: below this the object is not appearing
 
 # ======================
 # Argument Parser Config
@@ -236,7 +268,13 @@ def show_mask(mask, img, color):
 
 def draw_predictions(image, boxes, scores, masks, label, obj_ids=None):
     n = len(scores)
-    colors = [hsv_to_rgb(int(256 * i / max(n, 1)), 200, 200) for i in range(n)]
+    if obj_ids is not None:
+        colors = [
+            hsv_to_rgb(int(256 * ((int(obj_id) - 1) % 32) / 32), 200, 200)
+            for obj_id in obj_ids
+        ]
+    else:
+        colors = [hsv_to_rgb(int(256 * i / max(n, 1)), 200, 200) for i in range(n)]
 
     for i in range(n):
         if i < len(masks):
@@ -262,6 +300,73 @@ def draw_predictions(image, boxes, scores, masks, label, obj_ids=None):
         )
 
     return image
+
+
+def render_frame(
+    frame_path,
+    scores,
+    det_boxes,
+    masks,
+    bank_idxs,
+    display_label,
+    writer,
+    has_display,
+    frame_shown_ref,
+):
+    """Load frame, overlay predictions, display/write."""
+    frame = cv2.imread(frame_path)
+    obj_ids = [i + 1 for i in bank_idxs]
+    res_img = frame.copy()
+    res_img = draw_predictions(
+        res_img, det_boxes, scores, masks, display_label, obj_ids=obj_ids
+    )
+    if has_display:
+        cv2.imshow("frame", res_img)
+        frame_shown_ref[0] = True
+    if writer is not None:
+        writer.write(res_img.astype(np.uint8))
+
+
+def collect_frame_paths(video_src):
+    """
+    Returns sorted list of frame file paths.
+    For directories: JPEG/PNG files sorted by numeric stem.
+    For video files: decodes all frames to a temp directory.
+    """
+    if os.path.isdir(video_src):
+        paths = sorted(
+            [
+                p
+                for p in glob.glob(os.path.join(video_src, "*"))
+                if p.lower().endswith((".jpg", ".jpeg", ".png"))
+            ],
+            key=lambda p: (
+                int(os.path.splitext(os.path.basename(p))[0])
+                if os.path.splitext(os.path.basename(p))[0].isdigit()
+                else p
+            ),
+        )
+        if not paths:
+            raise FileNotFoundError(f"No JPEG/PNG frames found in {video_src}")
+        return paths
+
+    # Video file: decode to temp directory
+    cap = get_capture(video_src)
+    assert cap.isOpened(), f"Cannot open video: {video_src}"
+    tmpdir = tempfile.mkdtemp(prefix="sam3p1_frames_")
+    frame_idx = 0
+    paths = []
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        p = os.path.join(tmpdir, f"{frame_idx:05d}.jpg")
+        cv2.imwrite(p, frame)
+        paths.append(p)
+        frame_idx += 1
+    cap.release()
+    logger.info("Decoded %d frames to %s", len(paths), tmpdir)
+    return paths
 
 
 # ======================
@@ -437,6 +542,11 @@ def predict(models, img, caption, threshold, boxes=None, box_labels=None):
 
 
 def recognize_from_image(models):
+    for key in ("encoder", "grounder"):
+        m = models.get(key)
+        if m is not None and hasattr(m, "load"):
+            m.load()
+
     caption = args.caption
     threshold = args.threshold
     boxes = args.box
@@ -493,6 +603,11 @@ def recognize_from_image(models):
 
 def recognize_from_video(models):
     """Per-frame grounding on video — runs predict() independently for each frame."""
+    for key in ("encoder", "grounder"):
+        m = models.get(key)
+        if m is not None and hasattr(m, "load"):
+            m.load()
+
     caption = args.caption
     threshold = args.threshold
     boxes = args.box
@@ -545,7 +660,12 @@ def recognize_from_video(models):
 
 
 def recognize_from_tracking(models):
-    """SAM3.1 memory-based multi-person tracking mode (--tracking flag)."""
+    """SAM3.1 memory-based multi-person tracking.
+
+    Stage 1: add_prompt (frame 0)
+    Stage 2: propagate_in_video forward (frames 1 → N)
+    Stage 3: propagate_in_video reverse (frames N → 0, stub)
+    """
     from video_tracking import (  # avoid circular import (video_tracking imports sam3p1)
         Sam3Tracker,
     )
@@ -596,9 +716,29 @@ def recognize_from_tracking(models):
     tracker = Sam3Tracker(
         models, maskmem_tpos_enc, no_obj_params, threshold=args.threshold
     )
-    scores0, boxes0, masks0 = tracker.add_prompt(frame0_img, args.caption)
+    if args.point or args.box:
+        scores0, boxes0, masks0 = tracker.add_prompt_interactive(
+            frame0_img,
+            points=args.point,
+            point_labels=args.point_label,
+            box=args.box[0] if args.box else None,
+        )
+    else:
+        scores0, boxes0, masks0 = tracker.add_prompt(frame0_img, args.caption)
 
+    bank_idxs0 = list(range(1, len(tracker.memory_banks) + 1))
+    render_frame(
+        frame_paths[0],
+        scores0,
+        boxes0,
+        masks0,
+        bank_idxs0,
+        display_label,
+        writer,
+        has_display,
+        frame_shown,
     )
+    pbar.update(1)
 
     # Stage 2: propagate_in_video (forward: frames 1 → N)
     for frame_idx, scores, det_boxes, masks, obj_ids in tracker.propagate_in_video(
@@ -613,20 +753,22 @@ def recognize_from_tracking(models):
         ):
             break
 
-
-        res_img = frame.copy()
-
-        if has_display:
-            cv2.imshow("frame", res_img)
-            frame_shown = True
-        frame_idx += 1
+        render_frame(
+            frame_paths[frame_idx],
+            scores,
+            det_boxes,
+            masks,
+            obj_ids,
+            display_label,
+            writer,
+            has_display,
+            frame_shown,
+        )
         pbar.update(1)
 
-        if writer is not None:
-            writer.write(res_img.astype(np.uint8))
+    # Stage 3: reverse propagation (stub)
 
     pbar.close()
-    capture.release()
     if has_display:
         cv2.destroyAllWindows()
     if writer is not None:
@@ -640,6 +782,19 @@ def main():
     check_and_download_models(WEIGHT_GND_PATH, MODEL_GND_PATH, REMOTE_PATH)
 
     use_tracking = args.tracking
+
+    if use_tracking:
+        for w, m in [
+            (WEIGHT_PE_PATH, MODEL_PE_PATH),
+            (WEIGHT_DEC_PATH, MODEL_DEC_PATH),
+            (WEIGHT_TDEC_PATH, MODEL_TDEC_PATH),
+            (WEIGHT_MENC_PATH, MODEL_MENC_PATH),
+            (WEIGHT_MATTN_PATH, MODEL_MATTN_PATH),
+            (WEIGHT_PROJ_PATH, MODEL_PROJ_PATH),
+            (WEIGHT_IPROJ_PATH, MODEL_IPROJ_PATH),
+            (WEIGHT_TPOS_PATH, MODEL_TPOS_PATH),
+        ]:
+            check_and_download_models(w, m, REMOTE_PATH)
 
     env_id = args.env_id
 
@@ -682,6 +837,24 @@ def main():
                 env_id=env_id,
                 memory_mode=memory_mode,
             )
+            models["obj_proj"] = ailia.Net(
+                MODEL_PROJ_PATH,
+                WEIGHT_PROJ_PATH,
+                env_id=env_id,
+                memory_mode=memory_mode,
+            )
+            models["iobj_proj"] = ailia.Net(
+                MODEL_IPROJ_PATH,
+                WEIGHT_IPROJ_PATH,
+                env_id=env_id,
+                memory_mode=memory_mode,
+            )
+            models["tpos_proj"] = ailia.Net(
+                MODEL_TPOS_PATH,
+                WEIGHT_TPOS_PATH,
+                env_id=env_id,
+                memory_mode=memory_mode,
+            )
     else:
         import onnxruntime
 
@@ -691,6 +864,10 @@ def main():
             if cuda
             else ["CPUExecutionProvider"]
         )
+        # All models use LazyModel so unused models can be unloaded to free VRAM.
+        # memory_attention activation buffers grow with T_mem (up to ~6 GB at T_mem_max).
+        # Encoder's BFCArena caches large buffers and accumulates VRAM frame-over-frame,
+        # so encoder must also be unloaded before each memory_attention call.
         models = {}
         models["encoder"] = LazyModel(
             lambda: onnxruntime.InferenceSession(WEIGHT_ENC_PATH, providers=providers),
@@ -730,6 +907,24 @@ def main():
                     WEIGHT_MATTN_PATH, providers=providers
                 ),
                 "mem_attn",
+            )
+            models["obj_proj"] = LazyModel(
+                lambda: onnxruntime.InferenceSession(
+                    WEIGHT_PROJ_PATH, providers=providers
+                ),
+                "obj_proj",
+            )
+            models["iobj_proj"] = LazyModel(
+                lambda: onnxruntime.InferenceSession(
+                    WEIGHT_IPROJ_PATH, providers=providers
+                ),
+                "iobj_proj",
+            )
+            models["tpos_proj"] = LazyModel(
+                lambda: onnxruntime.InferenceSession(
+                    WEIGHT_TPOS_PATH, providers=providers
+                ),
+                "tpos_proj",
             )
 
     if args.tracking:

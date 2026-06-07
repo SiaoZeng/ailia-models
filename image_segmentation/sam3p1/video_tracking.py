@@ -1,12 +1,78 @@
+"""video_tracking.py — SAM 3.1 ONNX tracking (bucket mode).
+
+Entry point: Sam3Tracker
+
+    tracker = Sam3Tracker(models, maskmem_tpos_enc, no_obj_params)
+    tracker.add_prompt(frame, caption)          # frame 0, text grounding
+    for fi, scores, boxes, masks, ids in tracker.propagate_in_video(frame_paths):
+        ...                                     # frames 1 → N
+    tracker.remove_object(obj_idx)              # drop object mid-stream
+"""
+
 import cv2
 import numpy as np
+from math_utils import sigmoid
+from resize_utils import tv_resize
 from sam3p1 import (
+    MASK_CHANNELS,
+    MAX_OBJ_PTRS,
+    MEMORY_MASK_SIZE,
+    MULTIPLEX_COUNT,
+    NO_OBJ_SCORE,
+    NUM_MASKMEM,
+    OBJ_SCORE_THRESHOLD,
+    SIGMOID_BIAS_FOR_MEM_ENC,
+    SIGMOID_SCALE_FOR_MEM_ENC,
+    VALID_EMBED_PATH,
+    args,
     postprocess,
     preprocess,
     run_encoder,
     run_grounding,
     tokenize,
 )
+
+INVALID_EMBED_PATH = "sam3.1_output_invalid_embed.npy"
+INTERACTIVE_MASK_DWN_WEIGHT_PATH = "sam3.1_interactive_mask_downsample_weight.npy"
+INTERACTIVE_MASK_DWN_BIAS_PATH = "sam3.1_interactive_mask_downsample_bias.npy"
+
+# Set to False when GPU memory is large enough to keep all models loaded simultaneously.
+UNLOAD_MODELS_BETWEEN_STEPS = True
+
+
+# ── SAM3.1 tracking parameters ────────────────────────────────────────────────
+
+SCORE_THRESH_DET = 0.4  # score_threshold_detection
+DET_NMS_IOM_THRESH = 0.1  # det_nms_thresh  (det_nms_use_iom=True)
+ASSOC_IOM_THRESH = 0.1  # assoc_iou_thresh (use_iom_recondition=True → IoM)
+NEW_DET_THRESH = 0.65  # new_det_thresh
+MASKLET_CONFIRM_N = 3  # masklet_confirmation_consecutive_det_thresh
+UNCONFIRMED_STATUS_DELAY = MASKLET_CONFIRM_N - 1  # lookahead frames for confirmed check
+HOTSTART_DELAY = 15  # hotstart_delay
+HOTSTART_UNMATCH_THRESH = 8  # hotstart_unmatch_thresh
+HOTSTART_DUP_THRESH = 8  # hotstart_dup_thresh
+# suppress_unmatched_only_within_hotstart=False → keep_alive suppression is always active
+TRK_KEEP_ALIVE_MAX = 8  # max_trk_keep_alive  (Sam3MultiplexBase default)
+TRK_KEEP_ALIVE_MIN = -4  # min_trk_keep_alive  (Sam3MultiplexBase default)
+INIT_TRK_KEEP_ALIVE = 0  # init_trk_keep_alive (Sam3MultiplexBase default)
+
+
+# ── Cached weights (loaded once) ──────────────────────────────────────────────
+
+valid_embed_cache = None  # (16, 256) float32
+invalid_embed_cache = None  # (16, 256) float32
+imd_weight_cache = None  # (1, 1, 4, 4) float32
+imd_bias_cache = None  # (1,) float32
+
+
+def load_embeds():
+    global valid_embed_cache, invalid_embed_cache, imd_weight_cache, imd_bias_cache
+    if valid_embed_cache is None:
+        valid_embed_cache = np.load(VALID_EMBED_PATH).astype(np.float32)
+        invalid_embed_cache = np.load(INVALID_EMBED_PATH).astype(np.float32)
+        imd_weight_cache = np.load(INTERACTIVE_MASK_DWN_WEIGHT_PATH).astype(np.float32)
+        imd_bias_cache = np.load(INTERACTIVE_MASK_DWN_BIAS_PATH).astype(np.float32)
+
 
 # ── MemoryBank ────────────────────────────────────────────────────────────────
 
@@ -55,6 +121,112 @@ class MemoryBank:
             if len(self.ptr_frames_nc) > self.NON_COND_PTR_MAX:
                 self.ptr_frames_nc.pop(0)
 
+    def build_memory_inputs(self, current_frame_idx, maskmem_tpos_enc, models):
+        """Build the 4 memory tensors required by memory_attention.
+
+        Returns memory_obj, memory_obj_pos, memory_img, memory_img_pos.
+        Each is float32 numpy of shape (T, 1, 256).
+        """
+        if self.cond_frame is None and not self.spatial_frames:
+            raise RuntimeError(
+                "MemoryBank is empty; call add() before build_memory_inputs()"
+            )
+
+        obj_spatial_list = []
+        obj_spatial_pos_list = []
+        img_spatial_list = []
+        img_spatial_pos_list = []
+
+        def _add_spatial_entry(entry, tpos):
+            mf_flat = entry["mem_feat"].reshape(1, 256, -1).transpose(2, 0, 1)
+            mp_flat = entry["mem_pos"].reshape(1, 256, -1).transpose(2, 0, 1)
+            mp_flat = mp_flat + tpos.reshape(1, 1, 256)
+            obj_spatial_list.append(mf_flat)
+            obj_spatial_pos_list.append(mp_flat)
+            f2_flat = entry["fpn2"].reshape(1, 256, -1).transpose(2, 0, 1)
+            p2_flat = entry["pos2"].reshape(1, 256, -1).transpose(2, 0, 1)
+            p2_flat = p2_flat + tpos.reshape(1, 1, 256)
+            img_spatial_list.append(f2_flat)
+            img_spatial_pos_list.append(p2_flat)
+
+        # Conditioning frame: use age-based tpos (use_maskmem_tpos_v2=True in SAM3.1)
+        # tpos formula: t_pos<=0 or t_pos>=num_maskmem → index[num_maskmem-1]
+        if self.cond_frame is not None:
+            t_pos = current_frame_idx - self.cond_frame["frame_idx"]
+            if t_pos <= 0 or t_pos >= NUM_MASKMEM:
+                cond_tpos = maskmem_tpos_enc[NUM_MASKMEM - 1]
+            else:
+                cond_tpos = maskmem_tpos_enc[NUM_MASKMEM - t_pos - 1]
+            _add_spatial_entry(self.cond_frame, cond_tpos)
+
+        # Non-conditioning frames: tpos by actual frame distance.
+        # Newest (1 frame ago) → enc[0], oldest (6 frames ago) → enc[5].
+        for entry in self.spatial_frames:
+            t_pos = current_frame_idx - entry["frame_idx"]
+            tpos_idx = min(t_pos - 1, NUM_MASKMEM - 2)
+            tpos = maskmem_tpos_enc[tpos_idx]
+            _add_spatial_entry(entry, tpos)
+
+        # Ptr tokens: cond_frame ptr (always kept) + non-cond ptrs (rolling window).
+        ptr_entries = []
+        if self.cond_frame is not None:
+            ptr_entries.append(self.cond_frame)
+        ptr_entries.extend(self.ptr_frames_nc)
+
+        t_diffs = np.array(
+            [current_frame_idx - e["frame_idx"] for e in ptr_entries],
+            dtype=np.float32,
+        )
+        sine_pes = get_1d_sine_pe(t_diffs / (MAX_OBJ_PTRS - 1), dim=256)  # (J, 256)
+        tpos_proj = run_obj_ptr_tpos_proj(models, sine_pes)  # (J, 256)
+
+        obj_ptr_list = []
+        for e in ptr_entries:
+            block = e["all_ptrs"].reshape(MULTIPLEX_COUNT, 1, 256)
+            obj_ptr_list.append(block)
+
+        obj_ptr_pos_list = []
+        for i in range(len(ptr_entries)):
+            pos = tpos_proj[i].reshape(1, 256)  # (1, 256)
+            # repeat MULTIPLEX_COUNT times: each slot gets the same tpos
+            pos_block = np.repeat(pos[np.newaxis], MULTIPLEX_COUNT, axis=0).reshape(
+                MULTIPLEX_COUNT, 1, 256
+            )
+            obj_ptr_pos_list.append(pos_block)
+
+        memory_obj = np.concatenate(obj_spatial_list + obj_ptr_list, axis=0)
+        memory_obj_pos = np.concatenate(obj_spatial_pos_list + obj_ptr_pos_list, axis=0)
+        memory_img = np.concatenate(img_spatial_list, axis=0)
+        memory_img_pos = np.concatenate(img_spatial_pos_list, axis=0)
+
+        return memory_obj, memory_obj_pos, memory_img, memory_img_pos
+
+
+def get_1d_sine_pe(positions, dim=256):
+    """1D sinusoidal PE.
+
+    positions : (N,) float32, normalized values
+    returns   : (N, dim) float32
+    """
+    assert dim % 2 == 0
+    half = dim // 2
+    freq = 1.0 / (10000.0 ** (np.arange(half, dtype=np.float32) / half))
+    pos = np.array(positions, dtype=np.float32)  # (N,)
+    angles = pos[:, None] * freq[None, :]  # (N, half)
+    pe = np.concatenate([np.sin(angles), np.cos(angles)], axis=-1)  # (N, dim)
+    return pe
+
+
+def run_obj_ptr_tpos_proj(models, pe_input):
+    """pe_input : (N, 256) sine PE → (N, 256) projected tpos"""
+    tpos = models["tpos_proj"]
+    x = pe_input.astype(np.float32)
+    if not args.onnx:
+        out = tpos.predict([x])
+    else:
+        out = tpos.run(None, {"x": x})
+    return out[0]  # (N, 256)
+
 
 # ── Mask preprocessing ────────────────────────────────────────────────────────
 
@@ -81,9 +253,7 @@ def apply_interactive_mask_downsample(binary_mask_hw):
 def mask_for_prompt_encoder(binary_mask_hw, mask_input_size=(288, 288)):
     """Conv2d downsample + bilinear resize → (1, 1, H, W)."""
     ds = apply_interactive_mask_downsample(binary_mask_hw)
-    resized = cv2.resize(
-        ds, (mask_input_size[1], mask_input_size[0]), interpolation=cv2.INTER_LINEAR
-    )
+    resized = tv_resize(ds, (mask_input_size[0], mask_input_size[1]))
     return resized[np.newaxis, np.newaxis].astype(np.float32)
 
 
@@ -115,6 +285,44 @@ def build_combined_32ch_mask(binary_masks_orig, is_conditioning):
     return masks_32ch
 
 
+def build_32ch_mask_tracking(logit_masks_best, is_app_flags):
+    """(1, 32, MEMORY_MASK_SIZE, MEMORY_MASK_SIZE) for tracking frames.
+
+    ch 16+k is always 0: tracking frames are never conditioning frames.
+    Absent objects get NO_OBJ_SCORE logit so their memory contribution is suppressed.
+    """
+    masks_32ch = np.zeros(
+        (1, MASK_CHANNELS, MEMORY_MASK_SIZE, MEMORY_MASK_SIZE), dtype=np.float32
+    )
+    for k, (logit, is_app) in enumerate(zip(logit_masks_best, is_app_flags)):
+        if not is_app:
+            logit = np.full_like(logit, NO_OBJ_SCORE)
+        prob = sigmoid(logit) * SIGMOID_SCALE_FOR_MEM_ENC + SIGMOID_BIAS_FOR_MEM_ENC
+        resized = tv_resize(prob, (MEMORY_MASK_SIZE, MEMORY_MASK_SIZE))
+        masks_32ch[0, k] = resized
+        masks_32ch[0, 16 + k] = 0.0
+    return masks_32ch
+
+
+def build_32ch_mask(logit_mask, is_conditioning):
+    """
+    logit_mask     : (1, 1, H, W) float32 — raw logit mask from mask_decoder (best slot)
+    is_conditioning: bool — True for initial frame, False for tracking frames
+    Returns        : (1, 32, 1152, 1152) float32
+
+    sigmoid must be applied BEFORE resize because sigmoid is non-linear.
+    """
+    masks_32ch = np.zeros(
+        (1, MASK_CHANNELS, MEMORY_MASK_SIZE, MEMORY_MASK_SIZE), np.float32
+    )
+    prob = sigmoid(logit_mask[0, 0])  # (H, W), values in [0, 1]
+    prob = prob * SIGMOID_SCALE_FOR_MEM_ENC + SIGMOID_BIAS_FOR_MEM_ENC  # [-1, 1]
+    resized = tv_resize(prob, (MEMORY_MASK_SIZE, MEMORY_MASK_SIZE))
+    masks_32ch[0, 0] = resized
+    masks_32ch[0, 16] = 1.0 if is_conditioning else 0.0
+    return masks_32ch
+
+
 # ── Memory input assembly ─────────────────────────────────────────────────────
 
 
@@ -129,6 +337,41 @@ def build_combined_memory_inputs(memory_banks, frame_idx, maskmem_tpos_enc, mode
 
 
 # ── Prompt / decoder / memory runners ────────────────────────────────────────
+
+
+def box_to_corner_points(box, orig_h, orig_w):
+    """Convert [x1,y1,x2,y2] pixel box → corner point prompt for prompt_encoder.
+
+    SAM2 convention: top-left = label 2, bottom-right = label 3.
+    Returns coords(1,2,2) float32 in pixel space, labels(1,2) int32.
+    """
+    x1, y1, x2, y2 = box
+    coords = np.array([[[x1, y1], [x2, y2]]], dtype=np.float32)  # (1, 2, 2)
+    labels = np.array([[2, 3]], dtype=np.int32)  # (1, 2)
+    return coords, labels
+
+
+def run_prompt_encoder(models, coords, labels, mask, mask_enable):
+    """
+    coords       : (B, P, 2) float32 — pixel coords
+    labels       : (B, P)    int32
+    mask         : (B, 1, 288, 288) float32
+    mask_enable  : (1,) int32 — 1 to use mask, 0 to ignore
+    Returns      : sparse_emb, dense_emb, dense_pe
+    """
+    pe = models["prompt_enc"]
+    feed = {
+        "coords": coords.astype(np.float32),
+        "labels": labels.astype(np.int32),
+        "masks": mask.astype(np.float32),
+        "masks_enable": mask_enable.astype(np.int32),
+    }
+    if not args.onnx:
+        out = pe.predict(list(feed.values()))
+    else:
+        out = pe.run(None, feed)
+    sparse_emb, dense_emb, dense_pe = out
+    return sparse_emb, dense_emb, dense_pe
 
 
 def run_mask_decoder(
@@ -155,6 +398,30 @@ def run_mask_decoder(
     return masks, iou_pred, sam_tokens_out, object_score_logits
 
 
+def run_tracking_mask_decoder(models, image_embeddings, fpn0, fpn1, extra_embed):
+    """
+    Tracking-specific MultiplexMaskDecoder (bucket mode, no prompt encoder needed).
+    image_embeddings : (1, 256, 72, 72) combined memory-enriched features
+    fpn0             : (1, 256, 288, 288) raw FPN level 0
+    fpn1             : (1, 256, 144, 144) raw FPN level 1
+    extra_embed      : (1, 16, 256) per-slot valid/invalid embed (constructed at runtime)
+    Returns masks(1,16,3,288,288), iou_pred(1,16,3), sam_tokens(1,16,3,256), obj_score(1,16)
+    """
+    tdec = models["track_dec"]
+    feed = {
+        "image_embeddings": image_embeddings.astype(np.float32),
+        "high_res_feat0": fpn0.astype(np.float32),
+        "high_res_feat1": fpn1.astype(np.float32),
+        "extra_embed": extra_embed.astype(np.float32),
+    }
+    if not args.onnx:
+        out = tdec.predict(list(feed.values()))
+    else:
+        out = tdec.run(None, feed)
+    masks, iou_pred, sam_tokens, obj_score = out
+    return masks, iou_pred, sam_tokens, obj_score
+
+
 def run_memory_encoder(models, fpn2, masks_32ch):
     """
     fpn2       : (B, 256, 72, 72)
@@ -174,6 +441,52 @@ def run_memory_encoder(models, fpn2, masks_32ch):
     return vision_features, vision_pos_enc
 
 
+def run_memory_attention(
+    models,
+    curr_obj,
+    curr_obj_pos,
+    curr_img,
+    memory_obj,
+    memory_obj_pos,
+    memory_img,
+    memory_img_pos,
+):
+    """
+    All inputs in (T, B, C) layout.
+    curr_obj/curr_img : (HW, B, 256)
+    memory_obj        : (k*5185, B, 256)
+    memory_img        : (k*5184, B, 256)
+    Returns pix_feat_with_mem : (HW, B, 256)
+    """
+    mattn = models["mem_attn"]
+    feed = {
+        "curr_obj": curr_obj.astype(np.float32),
+        "curr_obj_pos": curr_obj_pos.astype(np.float32),
+        "curr_img": curr_img.astype(np.float32),
+        "memory_obj": memory_obj.astype(np.float32),
+        "memory_obj_pos": memory_obj_pos.astype(np.float32),
+        "memory_img": memory_img.astype(np.float32),
+        "memory_img_pos": memory_img_pos.astype(np.float32),
+    }
+    if not args.onnx:
+        out = mattn.predict(list(feed.values()))
+    else:
+        out = mattn.run(None, feed)
+    pix_feat_with_mem = out[0]
+    return pix_feat_with_mem
+
+
+def run_obj_ptr_proj(models, sam_tokens_first):
+    """Tracking obj_ptr_proj: sam_tokens_first (B, 256) → (B, 256)."""
+    proj = models["obj_proj"]
+    x = sam_tokens_first.astype(np.float32)
+    if not args.onnx:
+        out = proj.predict([x])
+    else:
+        out = proj.run(None, {"x": x})
+    return out[0]  # (B, 256)
+
+
 def run_interactive_obj_ptr_proj(models, sam_tokens_first):
     """Interactive obj_ptr_proj for init frame: sam_tokens_first (B, 256) → (B, 256).
 
@@ -187,6 +500,60 @@ def run_interactive_obj_ptr_proj(models, sam_tokens_first):
     else:
         out = proj.run(None, {"x": x})
     return out[0]  # (B, 256)
+
+
+def mask_iou(a, b):
+    inter = np.logical_and(a, b).sum()
+    union = np.logical_or(a, b).sum()
+    return float(inter) / float(union + 1e-6)
+
+
+def mask_iom_matrix(masks_a, masks_b):
+    """
+    (N, H, W) × (M, H, W) → (N, M) float32 IoM matrix.
+    IoM = intersection / min(area_a, area_b)
+    Source: sam3/sam3/train/masks_ops.py::mask_iom
+    """
+    N = masks_a.shape[0]
+    M = masks_b.shape[0]
+    if N == 0 or M == 0:
+        return np.zeros((N, M), dtype=np.float32)
+    fa = (masks_a > 0).reshape(N, -1).astype(np.float32)
+    fb = (masks_b > 0).reshape(M, -1).astype(np.float32)
+    inter = fa @ fb.T  # (N, M)
+    area_a = fa.sum(axis=1, keepdims=True)  # (N, 1)
+    area_b = fb.sum(axis=1, keepdims=True).T  # (1, M)
+    min_area = np.minimum(area_a, area_b)  # (N, M)
+    return inter / (min_area + 1e-8)
+
+
+def nms_masks_iom(masks_logit, scores, score_thresh, iom_thresh):
+    """
+    Greedy NMS using IoM.
+    Source: sam3/sam3/model/sam3_multiplex_detector_utils.py::nms_masks (nms_use_iom=True)
+    Returns bool keep array (K,).
+    """
+    is_valid = scores > score_thresh
+    valid_idx = np.where(is_valid)[0]
+    if len(valid_idx) == 0:
+        return is_valid
+    v_masks = (masks_logit[valid_idx] > 0).astype(np.float32)
+    v_scores = scores[valid_idx]
+    iom = mask_iom_matrix(v_masks, v_masks)  # (K, K)
+    order = np.argsort(-v_scores)
+    suppressed = np.zeros(len(valid_idx), dtype=bool)
+    kept = []
+    for i in order:
+        if suppressed[i]:
+            continue
+        kept.append(i)
+        for j in range(len(valid_idx)):
+            if not suppressed[j] and j != i and iom[i, j] > iom_thresh:
+                suppressed[j] = True
+    keep = np.zeros(len(scores), dtype=bool)
+    for ki in kept:
+        keep[valid_idx[ki]] = True
+    return keep
 
 
 # ── Sam3Tracker ───────────────────────────────────────────────────────────────
@@ -242,6 +609,56 @@ class Sam3Tracker:
     def reset(self):
         """Clear all tracked objects."""
         self.memory_banks = []
+        self.obj_ids = []
+        self.next_id = 1
+        self.keep_alive = []
+        self.consecutive_det_count = []
+        self.confirmed = []
+        self.add_frame = []
+        self.unmatch_total = []
+        self.pairwise_overlap = np.zeros((0, 0), dtype=np.int32)
+        self.current_frame = 0
+
+    def _append_object_state(self, frame_idx, confirmed, keep_alive_init):
+        """Append per-object state for a newly added object."""
+        self.obj_ids.append(self.next_id)
+        self.next_id += 1
+        self.keep_alive.append(keep_alive_init)
+        self.consecutive_det_count.append(MASKLET_CONFIRM_N if confirmed else 0)
+        self.confirmed.append(confirmed)
+        self.add_frame.append(frame_idx)
+        self.unmatch_total.append(0)
+        old_N = self.pairwise_overlap.shape[0]
+        new_N = old_N + 1
+        new_mat = np.zeros((new_N, new_N), dtype=np.int32)
+        new_mat[:old_N, :old_N] = self.pairwise_overlap
+        self.pairwise_overlap = new_mat
+
+    def _remove_object_state(self, obj_idx):
+        """Remove per-object state at slot obj_idx (parallel to memory_banks.pop)."""
+        self.obj_ids.pop(obj_idx)
+        self.keep_alive.pop(obj_idx)
+        self.consecutive_det_count.pop(obj_idx)
+        self.confirmed.pop(obj_idx)
+        self.add_frame.pop(obj_idx)
+        self.unmatch_total.pop(obj_idx)
+        self.pairwise_overlap = np.delete(
+            np.delete(self.pairwise_overlap, obj_idx, axis=0), obj_idx, axis=1
+        )
+
+    def remove_object(self, obj_idx):
+        """
+        Remove the object at index obj_idx from tracking.
+
+        The remaining objects are renumbered.  The change takes effect on the
+        next frame processed by propagate_in_video.
+        """
+        if obj_idx < 0 or obj_idx >= len(self.memory_banks):
+            raise IndexError(
+                f"obj_idx={obj_idx} out of range (n={len(self.memory_banks)})"
+            )
+        self.memory_banks.pop(obj_idx)
+        self._remove_object_state(obj_idx)
 
     # ── frame 0 initialisation ─────────────────────────────────────────────────
 
@@ -391,6 +808,113 @@ class Sam3Tracker:
             np.array(all_masks, dtype=bool),
         )
 
+    def add_prompt_interactive(self, frame, points=None, point_labels=None, box=None):
+        """
+        Point / box prompt on frame 0 (single object).
+
+        points      : (N, 2) float32 pixel coords
+        point_labels: (N,) int32
+        box         : (4,) float32 [x1, y1, x2, y2]
+
+        Returns (scores, boxes, bin_masks).
+        """
+        models = self.models
+        no_obj_params = self.no_obj_params
+
+        orig_h, orig_w = frame.shape[:2]
+        enc_out = run_encoder(models, preprocess(frame))
+        prop_fpn0, prop_fpn1, prop_fpn2, prop_pos2 = (
+            enc_out[6],
+            enc_out[7],
+            enc_out[8],
+            enc_out[9],
+        )
+
+        if box is not None:
+            coords, labels = box_to_corner_points(box, orig_h, orig_w)
+        else:
+            pts = np.array(points, dtype=np.float32)
+            coords = pts[np.newaxis]
+            lbls = (
+                np.array(point_labels, dtype=np.int32)
+                if point_labels is not None
+                else np.ones(len(pts), dtype=np.int32)
+            )
+            labels = lbls[np.newaxis]
+
+        mask_in = np.zeros((1, 1, 288, 288), dtype=np.float32)
+        mask_enable = np.array([0], dtype=np.int32)
+        sparse_emb, dense_emb, dense_pe = run_prompt_encoder(
+            models, coords, labels, mask_in, mask_enable
+        )
+        masks_dec, iou_pred, sam_tokens_out, obj_score = run_mask_decoder(
+            models, prop_fpn2, dense_pe, sparse_emb, dense_emb, prop_fpn0, prop_fpn1
+        )
+        best_slot = int(np.argmax(iou_pred[0]))
+        obj_ptr = run_interactive_obj_ptr_proj(models, sam_tokens_out[:, best_slot, :])
+
+        masks_32ch = build_32ch_mask(
+            masks_dec[0:1, best_slot : best_slot + 1], is_conditioning=True
+        )
+        mem_feat, mem_pos = run_memory_encoder(models, prop_fpn2, masks_32ch)
+        # add no-obj embeddings for unused slots (slots 1..15)
+        if no_obj_params is not None:
+            mem_feat = mem_feat + no_obj_params[0][1:].sum(axis=0).reshape(1, 256, 1, 1)
+
+        init_all_ptrs = np.zeros((MULTIPLEX_COUNT, 256), dtype=np.float32)
+        init_all_ptrs[0] = obj_ptr.reshape(256)
+        if no_obj_params is not None:
+            _, W, b = no_obj_params
+            for k in range(1, MULTIPLEX_COUNT):
+                init_all_ptrs[k] = (
+                    np.zeros((1, 256), dtype=np.float32) @ W.T + b
+                ).reshape(256)
+
+        mb = MemoryBank()
+        mb.add(
+            0,
+            prop_fpn2,
+            prop_pos2,
+            mem_feat,
+            mem_pos,
+            init_all_ptrs,
+            is_conditioning=True,
+        )
+        self.memory_banks = [mb]
+        self.obj_ids = []
+        self.next_id = 1
+        self.keep_alive = []
+        self.consecutive_det_count = []
+        self.confirmed = []
+        self.add_frame = []
+        self.unmatch_total = []
+        self.pairwise_overlap = np.zeros((0, 0), dtype=np.int32)
+        self.current_frame = 0
+        self._append_object_state(
+            frame_idx=0, confirmed=True, keep_alive_init=INIT_TRK_KEEP_ALIVE
+        )
+
+        logit_best = masks_dec[0, best_slot]
+        binary_mask = (
+            sigmoid(tv_resize(logit_best, (orig_h, orig_w), antialias=False)) > 0.5
+        )
+        score_val = float(sigmoid(float(np.asarray(obj_score).flat[0])))
+        yx = np.where(binary_mask)
+        if len(yx[0]) == 0:
+            return (
+                np.zeros(0),
+                np.zeros((0, 4), np.float32),
+                np.zeros((0, orig_h, orig_w), bool),
+            )
+
+        y1, y2 = int(yx[0].min()), int(yx[0].max())
+        x1, x2 = int(yx[1].min()), int(yx[1].max())
+        return (
+            np.array([score_val], dtype=np.float32),
+            np.array([[x1, y1, x2, y2]], dtype=np.float32),
+            binary_mask[np.newaxis],
+        )
+
     # ── propagation ───────────────────────────────────────────────────────────
 
     def propagate_in_video(self, frame_paths, start_frame=1):
@@ -435,6 +959,18 @@ class Sam3Tracker:
                 enc_out[9],
             )
 
+            if UNLOAD_MODELS_BETWEEN_STEPS:
+                for key in (
+                    "encoder",
+                    "grounder",
+                    "prompt_enc",
+                    "mask_dec",
+                    "iobj_proj",
+                ):
+                    m = models.get(key)
+                    if m and hasattr(m, "unload"):
+                        m.unload()
+
             # ── Step 2: memory attention ──────────────────────────────────
             memory_obj, memory_obj_pos, memory_img, memory_img_pos = (
                 build_combined_memory_inputs(
@@ -453,6 +989,11 @@ class Sam3Tracker:
                 memory_img=memory_img,
                 memory_img_pos=memory_img_pos,
             )
+            if UNLOAD_MODELS_BETWEEN_STEPS:
+                for key in ("mem_attn", "tpos_proj"):
+                    m = models.get(key)
+                    if m and hasattr(m, "unload"):
+                        m.unload()
 
             # ── Step 3: tracking mask decoder ─────────────────────────────
             extra_embed = self.build_extra_embed(N)
@@ -490,6 +1031,12 @@ class Sam3Tracker:
             existing_bin_masks = np.array(
                 [lb > 0 for lb in logit_bests], dtype=bool
             )  # (N, 288, 288)
+
+            if UNLOAD_MODELS_BETWEEN_STEPS:
+                for key in ("track_dec", "obj_proj"):
+                    m = models.get(key)
+                    if m and hasattr(m, "unload"):
+                        m.unload()
 
             # ── Step 5: grounding (NMS + association) ────────────────────
             new_cand_scores = []  # float, scores of accepted new detections
@@ -745,6 +1292,12 @@ class Sam3Tracker:
                     keep_alive_init=INIT_TRK_KEEP_ALIVE,
                 )
 
+            if UNLOAD_MODELS_BETWEEN_STEPS:
+                for key in ("mem_enc",):
+                    m = models.get(key)
+                    if m and hasattr(m, "unload"):
+                        m.unload()
+
             # ── Step 12: collect output ────────────────────────────────────
             # Candidates: suppress + is_app pass. The confirmed check is deferred
             # by UNCONFIRMED_STATUS_DELAY frames (PyTorch unconfirmed_status_delay
@@ -814,3 +1367,57 @@ class Sam3Tracker:
                     np.array(all_masks_out, dtype=bool),
                     obj_ids_out,
                 )
+
+    def build_extra_embed(self, n_objects):
+        """(1, 16, 256) slot validity signal for the tracking decoder.
+
+        Slots 0..n_objects-1 receive valid_embed (real objects);
+        remaining slots get invalid_embed so the decoder ignores them.
+        Without this distinction, empty slots produce ghost detections.
+        """
+        load_embeds()
+        extra = invalid_embed_cache.copy()
+        for k in range(min(n_objects, MULTIPLEX_COUNT)):
+            extra[k] = valid_embed_cache[k]
+        return extra[np.newaxis]
+
+
+# ── Convenience functions for sam3p1.py compatibility ─────────────────────────
+
+
+def add_prompt(models, frame, caption, maskmem_tpos_enc, no_obj_params=None):
+    """Functional wrapper: returns (memory_banks, scores, boxes, masks)."""
+    tracker = Sam3Tracker(models, maskmem_tpos_enc, no_obj_params)
+    scores, boxes, masks = tracker.add_prompt(frame, caption)
+    return tracker.memory_banks, scores, boxes, masks
+
+
+def add_prompt_interactive(
+    models,
+    frame,
+    maskmem_tpos_enc,
+    no_obj_params=None,
+    points=None,
+    point_labels=None,
+    box=None,
+):
+    """Functional wrapper: returns (memory_banks, scores, boxes, masks)."""
+    tracker = Sam3Tracker(models, maskmem_tpos_enc, no_obj_params)
+    scores, boxes, masks = tracker.add_prompt_interactive(
+        frame, points=points, point_labels=point_labels, box=box
+    )
+    return tracker.memory_banks, scores, boxes, masks
+
+
+def propagate_in_video(
+    models,
+    frame_paths,
+    memory_banks,
+    maskmem_tpos_enc,
+    no_obj_params=None,
+    start_frame=1,
+):
+    """Functional wrapper: yields (frame_idx, scores, boxes, masks, obj_ids)."""
+    tracker = Sam3Tracker(models, maskmem_tpos_enc, no_obj_params)
+    tracker.memory_banks = memory_banks
+    yield from tracker.propagate_in_video(frame_paths, start_frame=start_frame)
