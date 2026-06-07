@@ -55,6 +55,14 @@ HOTSTART_DUP_THRESH = 8  # hotstart_dup_thresh
 TRK_KEEP_ALIVE_MAX = 8  # max_trk_keep_alive  (Sam3MultiplexBase default)
 TRK_KEEP_ALIVE_MIN = -4  # min_trk_keep_alive  (Sam3MultiplexBase default)
 INIT_TRK_KEEP_ALIVE = 0  # init_trk_keep_alive (Sam3MultiplexBase default)
+SUPPRESS_OVERLAP_IOU_THRESH = (
+    0.7  # suppress_overlapping_based_on_recent_occlusion_threshold
+)
+DET_BOUNDARY_MARGIN = 0.025  # suppress_det_close_to_boundary=True, margin=0.025
+NEVER_OCCLUDED = -1  # last_occluded sentinel: object has never been occluded
+ALWAYS_OCCLUDED = (
+    100_000  # last_occluded sentinel: treated as always-occluded (hotstart-removed)
+)
 
 
 # ── Cached weights (loaded once) ──────────────────────────────────────────────
@@ -602,6 +610,9 @@ class Sam3Tracker:
         self.pairwise_overlap = np.zeros(
             (0, 0), dtype=np.int32
         )  # (N, N) overlap counts
+        self.last_occluded = (
+            []
+        )  # int: frame_idx of last occlusion, NEVER_OCCLUDED if never
         self.current_frame = 0
 
     # ── state management ───────────────────────────────────────────────────────
@@ -617,6 +628,7 @@ class Sam3Tracker:
         self.add_frame = []
         self.unmatch_total = []
         self.pairwise_overlap = np.zeros((0, 0), dtype=np.int32)
+        self.last_occluded = []
         self.current_frame = 0
 
     def _append_object_state(self, frame_idx, confirmed, keep_alive_init):
@@ -633,6 +645,7 @@ class Sam3Tracker:
         new_mat = np.zeros((new_N, new_N), dtype=np.int32)
         new_mat[:old_N, :old_N] = self.pairwise_overlap
         self.pairwise_overlap = new_mat
+        self.last_occluded.append(NEVER_OCCLUDED)
 
     def _remove_object_state(self, obj_idx):
         """Remove per-object state at slot obj_idx (parallel to memory_banks.pop)."""
@@ -645,6 +658,7 @@ class Sam3Tracker:
         self.pairwise_overlap = np.delete(
             np.delete(self.pairwise_overlap, obj_idx, axis=0), obj_idx, axis=1
         )
+        self.last_occluded.pop(obj_idx)
 
     def remove_object(self, obj_idx):
         """
@@ -701,6 +715,19 @@ class Sam3Tracker:
             np.zeros((1, 0), dtype=bool),
         )
         pred_masks_gnd, pred_boxes_gnd, pred_logits_gnd, presence_gnd = gnd_out
+
+        # Suppress detections whose center is within DET_BOUNDARY_MARGIN of image edges.
+        boxes_cxcywh_f0 = pred_boxes_gnd[0]  # (200, 4) normalized cx,cy,w,h
+        cx_f0 = boxes_cxcywh_f0[:, 0]
+        cy_f0 = boxes_cxcywh_f0[:, 1]
+        boundary_suppress_f0 = ~(
+            (cx_f0 > DET_BOUNDARY_MARGIN)
+            & (cx_f0 < 1.0 - DET_BOUNDARY_MARGIN)
+            & (cy_f0 > DET_BOUNDARY_MARGIN)
+            & (cy_f0 < 1.0 - DET_BOUNDARY_MARGIN)
+        )
+        pred_logits_gnd = pred_logits_gnd.copy()
+        pred_logits_gnd[0, boundary_suppress_f0, 0] = -100.0
 
         scores_tmp, _, bin_masks_tmp = postprocess(
             pred_masks_gnd,
@@ -1066,6 +1093,17 @@ class Sam3Tracker:
                     presence_gnd[0, 0]
                 )
                 gnd_keep = out_probs > SCORE_THRESH_DET
+                # Suppress detections whose center is within DET_BOUNDARY_MARGIN of image edges.
+                boxes_cxcywh = pred_boxes_gnd[0]  # (200, 4) normalized cx,cy,w,h
+                cx = boxes_cxcywh[:, 0]
+                cy = boxes_cxcywh[:, 1]
+                boundary_keep = (
+                    (cx > DET_BOUNDARY_MARGIN)
+                    & (cx < 1.0 - DET_BOUNDARY_MARGIN)
+                    & (cy > DET_BOUNDARY_MARGIN)
+                    & (cy < 1.0 - DET_BOUNDARY_MARGIN)
+                )
+                gnd_keep = gnd_keep & boundary_keep
                 gnd_keep_idx = np.where(gnd_keep)[0]
 
                 if len(gnd_keep_idx) > 0:
@@ -1197,6 +1235,39 @@ class Sam3Tracker:
             # (suppress_unmatched_only_within_hotstart=False → always active)
             suppress_set = {k for k in range(N) if self.keep_alive[k] <= 0}
 
+            # ── Step 7b: overlap suppression based on recent occlusion ────────
+            # For each pair (i, j) with tracking mask IoU >= 0.7, suppress the
+            # more recently occluded object (if the other was occluded at least once).
+            # Hotstart-removed objects are treated as ALWAYS_OCCLUDED for this calculation.
+            overlap_suppress = set()
+            if N >= 2:
+                temp_last_occ = list(self.last_occluded)
+                for k in set(to_remove):
+                    temp_last_occ[k] = ALWAYS_OCCLUDED
+
+                flat = existing_bin_masks.reshape(N, -1).astype(np.float32)
+                inter = flat @ flat.T  # (N, N)
+                area = flat.sum(axis=1, keepdims=True)  # (N, 1)
+                union = area + area.T - inter
+                iou_mat = inter / np.maximum(union, 1.0)
+
+                for i in range(N):
+                    for j in range(i + 1, N):
+                        if iou_mat[i, j] >= SUPPRESS_OVERLAP_IOU_THRESH:
+                            lo_i = temp_last_occ[i]
+                            lo_j = temp_last_occ[j]
+                            if lo_i > lo_j and lo_j > NEVER_OCCLUDED:
+                                overlap_suppress.add(i)
+                            elif lo_j > lo_i and lo_i > NEVER_OCCLUDED:
+                                overlap_suppress.add(j)
+            suppress_set |= overlap_suppress
+
+            # Update last_occluded: non-appearing or suppressed objects record this frame
+            for k in range(N):
+                mask_is_empty = not existing_bin_masks[k].any()
+                if mask_is_empty or k in suppress_set:
+                    self.last_occluded[k] = frame_idx
+
             # ── Step 8: memory encoder (runs on ALL N + M_new objects before removal) ─
             M = len(new_cand_bin_masks)
             total_N = N + M
@@ -1206,6 +1277,9 @@ class Sam3Tracker:
             for k, logit in enumerate(logit_bests):
                 # 非出現オブジェクトも実際のlogitをそのまま使う。
                 # 出現フラグはno_obj_embedで別途伝達されるため、マスク側をゼロにする必要はない。
+                # ただし overlap suppression で抑制されたオブジェクトはマスクをゼロにする。
+                if k in overlap_suppress:
+                    logit = np.full_like(logit, -10.0)
                 prob = (
                     sigmoid(logit) * SIGMOID_SCALE_FOR_MEM_ENC
                     + SIGMOID_BIAS_FOR_MEM_ENC
