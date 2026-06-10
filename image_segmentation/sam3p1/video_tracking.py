@@ -39,6 +39,10 @@ INTERACTIVE_MASK_DWN_BIAS_PATH = "sam3.1_interactive_mask_downsample_bias.npy"
 # Set to False when GPU memory is large enough to keep all models loaded simultaneously.
 UNLOAD_MODELS_BETWEEN_STEPS = True
 
+# Set to True to enable periodic mask reconditioning (every 16 frames).
+# Adds prompt_encoder + mask_decoder calls per matched object; disable for speed.
+ENABLE_RECONDITION = False
+
 
 # ── SAM3.1 tracking parameters ────────────────────────────────────────────────
 
@@ -510,12 +514,6 @@ def run_interactive_obj_ptr_proj(models, sam_tokens_first):
     return out[0]  # (B, 256)
 
 
-def mask_iou(a, b):
-    inter = np.logical_and(a, b).sum()
-    union = np.logical_or(a, b).sum()
-    return float(inter) / float(union + 1e-6)
-
-
 def mask_iom_matrix(masks_a, masks_b):
     """
     (N, H, W) × (M, H, W) → (N, M) float32 IoM matrix.
@@ -964,6 +962,8 @@ class Sam3Tracker:
         # (frame_idx, candidates) waiting until UNCONFIRMED_STATUS_DELAY future frames exist
         pending_outputs = []
         last_frame_idx = len(frame_paths) - 1
+        # cumulative set of obj_ids removed by hotstart (for retroactive hiding)
+        hotstart_removed_ids = set()
 
         for frame_idx in range(start_frame, len(frame_paths)):
             N = len(self.memory_banks)
@@ -1072,6 +1072,10 @@ class Sam3Tracker:
             new_obj_ptrs = []  # interactive obj_ptr per new object
             det_to_matched_trk = {}  # d → [k] for pairwise overlap tracking
             im_mask = np.zeros((0, N), dtype=bool)
+            # Available after grounding runs (for recondition in Step 7c)
+            raw_nms = np.zeros((0, 288, 288), dtype=np.float32)
+            scores_nms = np.zeros(0, dtype=np.float32)
+            iom_mat = np.zeros((0, N), dtype=np.float32)
 
             if self.caption is not None and N < MULTIPLEX_COUNT:
                 text_tokens = tokenize(self.caption)
@@ -1268,6 +1272,66 @@ class Sam3Tracker:
                 if mask_is_empty or k in suppress_set:
                     self.last_occluded[k] = frame_idx
 
+            # ── Step 7c: recondition every 16 frames ─────────────────────
+            # For tracks with a high-confidence (≥0.8) detection match (IoM ≥ 0.5),
+            # blend the detection mask with the tracking mask and refresh the obj_ptr.
+            _RECOND_EVERY_N = 16
+            _HIGH_CONF_RECOND = 0.8
+            _IOM_THRESH_RECOND = 0.5  # iom_thresh_recondition
+            if (
+                ENABLE_RECONDITION
+                and frame_idx % _RECOND_EVERY_N == 0
+                and N > 0
+                and len(raw_nms) > 0
+            ):
+                to_remove_set_7c = set(to_remove)
+                for k in range(N):
+                    if k in to_remove_set_7c or k in suppress_set:
+                        continue
+                    obj_score_k = float(sigmoid(float(obj_scores_all[0, k])))
+                    if obj_score_k < _HIGH_CONF_RECOND:
+                        continue
+                    best_d = -1
+                    best_iom_k = 0.0
+                    for d in range(len(scores_nms)):
+                        if scores_nms[d] >= _HIGH_CONF_RECOND and iom_mat.shape[1] > k:
+                            iom_dk = float(iom_mat[d, k])
+                            if iom_dk >= _IOM_THRESH_RECOND and iom_dk > best_iom_k:
+                                best_iom_k = iom_dk
+                                best_d = d
+                    if best_d < 0:
+                        continue
+                    # Blend: where det and trk agree keep trk logit, else use det logit
+                    det_logit = raw_nms[best_d]
+                    trk_logit = logit_bests[k]
+                    agree = (det_logit > 0) == (trk_logit > 0)
+                    logit_bests[k] = np.where(agree, trk_logit, det_logit)
+                    # Refresh obj_ptr via interactive decoder
+                    bin_full_k = (
+                        sigmoid(
+                            cv2.resize(
+                                logit_bests[k],
+                                (orig_w, orig_h),
+                                interpolation=cv2.INTER_LINEAR,
+                            )
+                        )
+                        > 0.5
+                    )
+                    mfp_k = mask_for_prompt_encoder(
+                        bin_full_k.astype(np.float32), mask_input_size=(288, 288)
+                    )
+                    c_k = np.zeros((1, 1, 2), dtype=np.float32)
+                    l_k = np.array([[-1]], dtype=np.int32)
+                    me_k = np.array([1], dtype=np.int32)
+                    sp_k, de_k, dp_k = run_prompt_encoder(models, c_k, l_k, mfp_k, me_k)
+                    md_k, ip_k, st_k, _ = run_mask_decoder(
+                        models, prop_fpn2, dp_k, sp_k, de_k, prop_fpn0, prop_fpn1
+                    )
+                    bs_k = int(np.argmax(ip_k[0]))
+                    all_ptrs[k] = run_interactive_obj_ptr_proj(
+                        models, st_k[:, bs_k, :]
+                    ).reshape(256)
+
             # ── Step 8: memory encoder (runs on ALL N + M_new objects before removal) ─
             M = len(new_cand_bin_masks)
             total_N = N + M
@@ -1315,6 +1379,9 @@ class Sam3Tracker:
 
             # ── Step 9: remove objects (compact state) ────────────────────
             to_remove_set = set(to_remove)
+            # Record removed obj_ids before they're deleted (for retroactive output hiding)
+            for k in to_remove_set:
+                hotstart_removed_ids.add(self.obj_ids[k])
             remaining_old_slots = [k for k in range(N) if k not in to_remove_set]
             for k in sorted(to_remove_set, reverse=True):
                 self.memory_banks.pop(k)
@@ -1428,12 +1495,40 @@ class Sam3Tracker:
                     [],
                 )
                 for obj_id, score, box, mask in yield_candidates:
-                    if obj_id in hidden_ids:
+                    if obj_id in hidden_ids or obj_id in hotstart_removed_ids:
                         continue
                     all_scores_out.append(score)
                     all_boxes_out.append(box)
                     all_masks_out.append(mask)
                     obj_ids_out.append(obj_id)
+
+                # Apply non-overlapping constraint: for each pixel assign to the
+                # highest-score object; objects that lose all pixels are dropped.
+                if len(all_masks_out) > 1:
+                    masks_np = np.stack(all_masks_out)  # (K, H, W)
+                    sc_np = np.array(all_scores_out, dtype=np.float32)
+                    score_map = np.where(masks_np, sc_np[:, None, None], -1.0)
+                    best_owner = np.argmax(score_map, axis=0)  # (H, W)
+                    all_masks_out = [
+                        masks_np[i] & (best_owner == i)
+                        for i in range(len(all_masks_out))
+                    ]
+                    valid = [i for i, m in enumerate(all_masks_out) if m.any()]
+                    all_scores_out = [all_scores_out[i] for i in valid]
+                    all_masks_out = [all_masks_out[i] for i in valid]
+                    obj_ids_out = [obj_ids_out[i] for i in valid]
+                    all_boxes_out = []
+                    for m in all_masks_out:
+                        yx = np.where(m)
+                        all_boxes_out.append(
+                            [
+                                int(yx[1].min()),
+                                int(yx[0].min()),
+                                int(yx[1].max()),
+                                int(yx[0].max()),
+                            ]
+                        )
+
                 yield (
                     yield_frame_idx,
                     np.array(all_scores_out, dtype=np.float32),
