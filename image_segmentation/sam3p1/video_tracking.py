@@ -32,9 +32,9 @@ from sam3p1 import (
     tokenize,
 )
 
-INVALID_EMBED_PATH = "sam3.1_output_invalid_embed.npy"
-INTERACTIVE_MASK_DWN_WEIGHT_PATH = "sam3.1_interactive_mask_downsample_weight.npy"
-INTERACTIVE_MASK_DWN_BIAS_PATH = "sam3.1_interactive_mask_downsample_bias.npy"
+INVALID_EMBED_PATH = "npy/sam3.1_output_invalid_embed.npy"
+INTERACTIVE_MASK_DWN_WEIGHT_PATH = "npy/sam3.1_interactive_mask_downsample_weight.npy"
+INTERACTIVE_MASK_DWN_BIAS_PATH = "npy/sam3.1_interactive_mask_downsample_bias.npy"
 
 # Set to False when GPU memory is large enough to keep all models loaded simultaneously.
 UNLOAD_MODELS_BETWEEN_STEPS = True
