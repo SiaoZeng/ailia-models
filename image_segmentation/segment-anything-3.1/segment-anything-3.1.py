@@ -28,8 +28,10 @@ logger = getLogger(__name__)
 
 # Grounding models (image + video init)
 WEIGHT_ENC_PATH = "sam3.1_image_encoder.onnx"
+WEIGHT_ENC_OPT_PATH = "sam3.1_image_encoder.opt.onnx"
 WEIGHT_GND_PATH = "sam3.1_grounding.onnx"
 MODEL_ENC_PATH = "sam3.1_image_encoder.onnx.prototxt"
+MODEL_ENC_OPT_PATH = "sam3.1_image_encoder.opt.onnx.prototxt"
 MODEL_GND_PATH = "sam3.1_grounding.onnx.prototxt"
 
 # Tracker models (video mode)
@@ -131,6 +133,11 @@ parser.add_argument(
     help="Label per --point (1=positive, 0=negative). Defaults to all positive.",
 )
 parser.add_argument("--onnx", action="store_true", help="execute onnxruntime version.")
+parser.add_argument(
+    "--normal",
+    action="store_true",
+    help="Use the non-optimized image encoder (sam3.1_image_encoder.onnx) instead of the .opt variant.",
+)
 parser.add_argument(
     "--tracking",
     action="store_true",
@@ -778,7 +785,9 @@ def recognize_from_tracking(models):
 
 
 def main():
-    check_and_download_models(WEIGHT_ENC_PATH, MODEL_ENC_PATH, REMOTE_PATH)
+    weight_enc_path = WEIGHT_ENC_PATH if args.normal else WEIGHT_ENC_OPT_PATH
+    model_enc_path = MODEL_ENC_PATH if args.normal else MODEL_ENC_OPT_PATH
+    check_and_download_models(weight_enc_path, model_enc_path, REMOTE_PATH)
     check_and_download_models(WEIGHT_GND_PATH, MODEL_GND_PATH, REMOTE_PATH)
     check_and_download_file(BPE_PATH, REMOTE_PATH)
 
@@ -807,7 +816,7 @@ def main():
             reuse_interstage=True,
         )
         encoder = ailia.Net(
-            MODEL_ENC_PATH, WEIGHT_ENC_PATH, env_id=env_id, memory_mode=memory_mode
+            model_enc_path, weight_enc_path, env_id=env_id, memory_mode=memory_mode
         )
         grounder = ailia.Net(
             MODEL_GND_PATH, WEIGHT_GND_PATH, env_id=env_id, memory_mode=memory_mode
@@ -871,7 +880,7 @@ def main():
         # so encoder must also be unloaded before each memory_attention call.
         models = {}
         models["encoder"] = LazyModel(
-            lambda: onnxruntime.InferenceSession(WEIGHT_ENC_PATH, providers=providers),
+            lambda: onnxruntime.InferenceSession(weight_enc_path, providers=providers),
             "encoder",
         )
         models["grounder"] = LazyModel(
