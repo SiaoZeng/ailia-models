@@ -477,6 +477,18 @@ def run_grounding(
     models, fpn0, fpn1, fpn2, pos2, text_tokens, box_coords, box_labels_arr, box_mask
 ):
     """Run grounding model."""
+    # In opt+ailia mode, empty (0-length) blobs are not supported by MatMul,
+    # so substitute a single dummy box marked as padding via box_mask=True.
+    # In --normal mode or --onnx (ORT) mode, keep the original empty inputs.
+    if (
+        not args.normal
+        and not args.onnx
+        and box_coords.shape[0] == 0
+    ):
+        box_coords = np.zeros((1, 1, 4), dtype=np.float32)
+        box_labels_arr = np.zeros((1, 1), dtype=np.int64)
+        box_mask = np.ones((1, 1), dtype=bool)
+
     grounder = models["grounder"]
     if not args.onnx:
         gnd_out = grounder.predict(
@@ -512,17 +524,9 @@ def predict(models, img, caption, threshold, boxes=None, box_labels=None):
         )
     else:
         text_tokens = tokenize(caption)
-        # In opt+ailia mode, empty (0-length) blobs are not supported by MatMul,
-        # so pass a single dummy box marked as padding via box_mask=True.
-        # In --normal mode or --onnx (ORT) mode, keep the original empty inputs.
-        if not args.normal and not args.onnx:
-            box_coords = np.zeros((1, 1, 4), dtype=np.float32)
-            box_labels_arr = np.zeros((1, 1), dtype=np.int64)
-            box_mask = np.ones((1, 1), dtype=bool)
-        else:
-            box_coords = np.zeros((0, 1, 4), dtype=np.float32)
-            box_labels_arr = np.zeros((0, 1), dtype=np.int64)
-            box_mask = np.zeros((1, 0), dtype=bool)
+        box_coords = np.zeros((0, 1, 4), dtype=np.float32)
+        box_labels_arr = np.zeros((0, 1), dtype=np.int64)
+        box_mask = np.zeros((1, 0), dtype=bool)
 
     enc_out = run_encoder(models, img_input)
     fpn0, fpn1, fpn2, pos0, pos1, pos2, *_ = enc_out
