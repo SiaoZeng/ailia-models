@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 from math_utils import sigmoid
 from resize_utils import tv_resize
-from sam3p1 import (
+from segment_anything_3_1 import (
     MASK_CHANNELS,
     MAX_OBJ_PTRS,
     MEMORY_MASK_SIZE,
