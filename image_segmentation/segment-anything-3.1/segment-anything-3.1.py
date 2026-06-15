@@ -16,7 +16,7 @@ sys.path.append("../../util")
 from arg_utils import get_base_parser, get_savepath, update_parser
 from detector_utils import hsv_to_rgb, load_image
 from math_utils import sigmoid
-from model_utils import check_and_download_models
+from model_utils import check_and_download_file, check_and_download_models
 from simple_tokenizer import SimpleTokenizer
 from webcamera_utils import get_capture, get_writer
 
@@ -780,6 +780,7 @@ def recognize_from_tracking(models):
 def main():
     check_and_download_models(WEIGHT_ENC_PATH, MODEL_ENC_PATH, REMOTE_PATH)
     check_and_download_models(WEIGHT_GND_PATH, MODEL_GND_PATH, REMOTE_PATH)
+    check_and_download_file(BPE_PATH, REMOTE_PATH)
 
     use_tracking = args.tracking
 
