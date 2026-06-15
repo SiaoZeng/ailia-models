@@ -60,7 +60,7 @@ NO_OBJ_PTR_LINEAR_B_PATH = "npy/sam3.1_no_obj_ptr_linear_bias.npy"
 VALID_EMBED_PATH = "npy/sam3.1_output_valid_embed.npy"
 
 BPE_PATH = "bpe_simple_vocab_16e6.txt.gz"
-REMOTE_PATH = "https://storage.googleapis.com/ailia-models/sam3p1/"
+REMOTE_PATH = "https://storage.googleapis.com/ailia-models/segment-anything-3.1/"
 
 IMAGE_PATH = "test_image.jpg"
 SAVE_IMAGE_PATH = "output.png"
