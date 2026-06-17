@@ -703,10 +703,16 @@ def main():
         predict_fn = predict_ailia
         predictor = net
 
+        if args.profile:
+            net.set_profile_mode(True)
+
     if args.video is not None:
         recognize_from_video(predictor, predict_fn)
     else:
         recognize_from_image(predictor, predict_fn)
+
+    if args.profile and not args.onnx:
+        print(net.get_summary())
 
 
 if __name__ == '__main__':
