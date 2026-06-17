@@ -4,9 +4,10 @@
 
 ![Input](demo.jpg)
 
-## Output
+Image from https://thumbs.dreamstime.com/b/lovely-cat-as-domestic-animal-view-pictures-182393057.jpg  
+Refer from https://github.com/LAION-AI/aesthetic-predictor/blob/main/asthetics_predictor.ipynb
 
-![Output](output.png)
+## Output
 
 - Aesthetic score prediction
 ```bash

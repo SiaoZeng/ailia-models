@@ -211,6 +211,7 @@ cd ../../image_manipulation/cnngeometric_pytorch; python3 cnngeometric_pytorch.p
 cd ../../image_manipulation/lightglue; python3 lightglue.py ${OPTION}
 cd ../../image_manipulation/docshadow; python3 docshadow.py ${OPTION}
 cd ../../image_manipulation/fbcnn; python3 fbcnn.py ${OPTION}
+cd ../../image_quality_assessment/aesthetic-predictor; python3 aesthetic-predictor.py ${OPTION}
 cd ../../image_restoration/nafnet; python3 nafnet.py ${OPTION}
 cd ../../image_segmentation/deeplabv3; python3 deeplabv3.py ${OPTION}
 cd ../../image_segmentation/hair_segmentation; python3 hair_segmentation.py ${OPTION}
