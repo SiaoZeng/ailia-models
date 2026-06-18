@@ -10,7 +10,7 @@ from transformers import AutoTokenizer
 # import original modules
 sys.path.append("../../util")
 from arg_utils import get_base_parser, update_parser  # noqa
-from model_utils import check_and_download_models  # noqa
+from model_utils import check_and_download_models, check_and_download_file  # noqa
 
 logger = getLogger(__name__)
 
@@ -20,6 +20,7 @@ logger = getLogger(__name__)
 
 WEIGHT_PATH = "Qwen3-Embedding-0.6B.onnx"
 MODEL_PATH = "Qwen3-Embedding-0.6B.onnx.prototxt"
+DATA_PATH = "Qwen3-Embedding-0.6B_weights.pb"
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/qwen3-embedding/"
 
 QUERY_DEFAULT = "What is the capital of China?"
@@ -172,6 +173,7 @@ def recognize_from_sentence(models):
 def main():
     # model files check and download
     check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
+    check_and_download_file(DATA_PATH, REMOTE_PATH)
 
     env_id = args.env_id
 
