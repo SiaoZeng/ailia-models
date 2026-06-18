@@ -37,6 +37,9 @@ If you would like to try on your computer:
 403 models as of March 30, 2026
 
 # Latest update
+- 2026.06.18 Add detr
+- 2026.06.15 Add segment-anything-3.1
+- 2026.05.01 Add segformer, moirai, chronos2
 - 2026.03.30 Add auto mode for segment-anything-v2
 - 2026.03.27 Add gpt-sovits-v2pro-int4, whisper-int4, sensevoice-int4 (currently required ORT)
 - 2026.03.23 Add qwen2vl-int4 (currently required ORT)
@@ -693,6 +696,7 @@ If you would like to try on your computer:
 
 | | Model | Reference | Exported From | Supported Ailia Version | Date | Blog |
 |:-----------|------------:|:------------:|:------------:|:------------:|:------------:|:------------:|
+| [<img src="object_detection/detr/output/output.png" width=128px>](object_detection/detr/) | [detr](/object_detection/detr/) | [End-to-End Object Detection with Transformers (DETR)](https://github.com/facebookresearch/detr) | Pytorch | 1.2.16 and later | May 2020 ||
 | [<img src="object_detection/glip/output.png" width=128px>](object_detection/glip/) | [glip](/object_detection/glip/) | [GLIP](https://github.com/microsoft/GLIP) | Pytorch | 1.2.13 and later | Dec 2021 | |
 | [<img src="object_detection/dab-detr/output.jpg" width=128px>](object_detection/dab-detr/) | [dab-detr](/object_detection/dab-detr/) | [DAB-DETR](https://github.com/IDEA-opensource/DAB-DETR) | Pytorch | 1.2.12 and later | Jan 2022 | |
 | [<img src="object_detection/detic/output.png" width=128px>](object_detection/detic/) | [detic](/object_detection/detic/) | [Detecting Twenty-thousand Classes using Image-level Supervision](https://github.com/facebookresearch/Detic) | Pytorch | 1.2.10 and later | Jan 2022 | [EN](https://medium.com/p/49cba412b7d4) [JP](https://tech.ailia.ai/detic-21k%E3%82%AF%E3%83%A9%E3%82%B9%E3%82%92%E9%AB%98%E7%B2%BE%E5%BA%A6%E3%81%AB%E3%82%BB%E3%82%B0%E3%83%A1%E3%83%B3%E3%83%86%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%81%A7%E3%81%8D%E3%82%8B%E7%89%A9%E4%BD%93%E6%A4%9C%E5%87%BA%E3%83%A2%E3%83%87%E3%83%AB-1b8f777ee89a) |
