@@ -464,6 +464,12 @@ If you would like to try on your computer:
 | [<img src="image_manipulation/lightglue/output.png" width=128px>](image_manipulation/lightglue/) | [lightglue](/image_manipulation/lightglue/) | [LightGlue-ONNX](https://github.com/fabio-sim/LightGlue-ONNX) | Pytorch | 1.2.15 and later | Jun 2023 | |
 | [<img src="image_manipulation/docshadow/output.png" width=128px>](image_manipulation/docshadow/) | [docshadow](/image_manipulation/docshadow/) | [DocShadow-ONNX-TensorRT](https://github.com/fabio-sim/DocShadow-ONNX-TensorRT) | Pytorch | 1.2.10 and later | Aug 2023 | |
 
+## Image Quality Assessment
+
+| | Model | Reference | Exported From | Supported Ailia Version | Date | Blog |
+|:-----------|------------:|:------------:|:------------:|:------------:|:------------:|:------------:|
+| [<img src="image_quality_assessment/aesthetic-predictor/demo.jpg" width=128px>](image_quality_assessment/aesthetic-predictor/) | [aesthetic-predictor](/image_quality_assessment/aesthetic-predictor/) | [LAION-Aesthetics_Predictor V1](https://github.com/LAION-AI/aesthetic-predictor) | Pytorch | 1.2.14 and later | May 2022 |  | 
+
 ## Image restoration
 
 | | Model | Reference | Exported From | Supported Ailia Version | Date | Blog |
