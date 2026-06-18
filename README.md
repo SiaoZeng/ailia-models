@@ -25,37 +25,16 @@ Try now on [Google Colaboratory](https://www.ailia.ai/launch_to_colab)
 
 If you would like to try on your computer:
 
-[ailia MODELS tutorial](TUTORIAL.md)
-
-[ailia MODELS tutorial 日本語版](TUTORIAL_jp.md)
+[ailia MODELS tutorial](TUTORIAL.md)  
+[ailia MODELS tutorial 日本語版](TUTORIAL_jp.md)  
 
 # Documentation
 
-[ailia-models wiki](https://deepwiki.com/ailia-ai/ailia-models)
-
-# Supported models
-403 models as of March 30, 2026
+[ailia MODELS deepwiki](https://deepwiki.com/ailia-ai/ailia-models)  
 
 # Latest update
-- 2026.06.18 Add detr
-- 2026.06.15 Add segment-anything-3.1
-- 2026.05.01 Add segformer, moirai, chronos2
-- 2026.03.30 Add auto mode for segment-anything-v2
-- 2026.03.27 Add gpt-sovits-v2pro-int4, whisper-int4, sensevoice-int4 (currently required ORT)
-- 2026.03.23 Add qwen2vl-int4 (currently required ORT)
-- 2026.03.12 Add depth_anything_v3, depth_pro
-- 2026.03.06 Add depth_anything_v2
-- 2026.03.04 Add gpt-sovits-v2-pro, bevformer, uniad
-- 2026.03.02 Add g2pw, gpt-sovits-v1, v2, v3 (chinese)
-- 2026.01.16 Add embeddinggemma
-- 2025.12.30 Add demucs, latentsync
-- 2025.12.26 Add sadtalker
-- 2025.12.25 Add samurai, cotracker3 (ailia SDK 1.6.1)
-- 2025.12.21 Add silerovad v5, v6, v6_2
-- 2025.12.17 Add sensevoice, cosyvoice2
-- 2025.12.01 Add glass, mobilevlm, donut
 
-- More information in our [Wiki](https://github.com/ailia-ai/ailia-models/wiki)
+[See update history](https://github.com/ailia-ai/ailia-models/wiki)
 
 ## Action recognition
 
@@ -561,6 +540,7 @@ If you would like to try on your computer:
 |[sentence_transformers_japanese](/natural_language_processing/sentence_transformers_japanese) | [sentence transformers](https://huggingface.co/sentence-transformers/paraphrase-multilingual-mpnet-base-v2) | Pytorch | 1.2.7 and later | Aug 2019 | [JP](https://tech.ailia.ai/sentencetransformer-%E3%83%86%E3%82%AD%E3%82%B9%E3%83%88%E3%81%8B%E3%82%89embedding%E3%82%92%E5%8F%96%E5%BE%97%E3%81%99%E3%82%8B%E8%A8%80%E8%AA%9E%E5%87%A6%E7%90%86%E3%83%A2%E3%83%87%E3%83%AB-b7d2a9bb2c31) |
 |[multilingual-e5](/natural_language_processing/multilingual-e5) | [multilingual-e5-base](https://huggingface.co/intfloat/multilingual-e5-base) | Pytorch | 1.2.15 and later | Dec 2022 | [EN](https://tech.ailia.ai/en/multilingual-e5-a-machine-learning-model-for-embedding-text-in-multiple-languages-b4916cb22bda/) [JP](https://tech.ailia.ai/multilingual-e5-%E5%A4%9A%E8%A8%80%E8%AA%9E%E3%81%AE%E3%83%86%E3%82%AD%E3%82%B9%E3%83%88%E3%82%92embedding%E3%81%99%E3%82%8B%E6%A9%9F%E6%A2%B0%E5%AD%A6%E7%BF%92%E3%83%A2%E3%83%87%E3%83%AB-71f1dec7c4f0) |
 |[glucose](/natural_language_processing/glucose) | [GLuCoSE (General Luke-based Contrastive Sentence Embedding)-base-Japanese](https://huggingface.co/pkshatech/GLuCoSE-base-ja) | Pytorch | 1.2.15 and later | Jul 2023 | |
+|[qwen3-embedding](/natural_language_processing/qwen3-embedding) | [Hugging Face - Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | Pytorch | 1.2.16 and later | Jun 2025| |
 |[ruri-v3](/natural_language_processing/ruri-v3) | [ruri-v3-310m ](https://huggingface.co/cl-nagoya/ruri-v3-310m) | Pytorch | 1.2.13 and later | Apr 2025 | |
 |[embeddinggemma](/natural_language_processing/embeddinggemma) | [EmbeddingGemma](https://ai.google.dev/gemma/docs/embeddinggemma?hl=ja) | Pytorch | 1.2.14 and later | Sep 2025| [JP](https://kyakuno.medium.com/embedding-gemma-google%E3%81%AE%E9%96%8B%E7%99%BA%E3%81%97%E3%81%9F%E8%BB%BD%E9%87%8F%E3%81%A7%E9%AB%98%E7%B2%BE%E5%BA%A6%E3%81%AAembedding%E3%83%A2%E3%83%87%E3%83%AB-9ec139ddfde9) |
 
