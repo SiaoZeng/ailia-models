@@ -132,6 +132,10 @@ def main():
         opset_version=args.opset,
         input_names=['image'],
         output_names=['depth'],
+        dynamic_axes={
+            'image': {0: 'batch', 2: 'height', 3: 'width'},
+            'depth': {0: 'batch', 2: 'height', 3: 'width'},
+        },
         dynamo=False,
     )
 
