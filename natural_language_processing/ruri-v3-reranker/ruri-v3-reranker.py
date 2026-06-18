@@ -42,15 +42,13 @@ parser.add_argument(
         "If a single filename is given and the file exists, reads documents from it."
     ),
 )
-# parser.add_argument(
-#     "--disable_ailia_tokenizer",
-#     action="store_true",
-#     help="disable ailia tokenizer.",
-# )
+parser.add_argument(
+    "--disable_ailia_tokenizer",
+    action="store_true",
+    help="disable ailia tokenizer.",
+)
 parser.add_argument("--onnx", action="store_true", help="execute onnxruntime version.")
 args = update_parser(parser, check_input_type=False)
-
-args.disable_ailia_tokenizer = True
 
 
 # ======================
@@ -178,6 +176,7 @@ def main():
         from ailia_tokenizer import LlamaTokenizer
 
         tokenizer = LlamaTokenizer.from_pretrained("./tokenizer")
+        #tokenizer._pad_token_id = 3 # これを指定しないとpadが0になるが、attn_maskによって影響はない
 
     models = {
         "net": net,
