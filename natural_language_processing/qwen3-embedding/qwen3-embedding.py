@@ -109,7 +109,6 @@ def predict(models, texts):
         input_ids, attention_mask = append_eos_and_left_pad(
             input_ids, attention_mask, PAD_TOKEN_ID, EOS_TOKEN_ID
         )
-    print(input_ids)
 
     net = models["net"]
 
