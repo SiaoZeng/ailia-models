@@ -74,6 +74,26 @@ def get_query_text(task, query):
 # ======================
 
 
+PAD_TOKEN_ID = 151643  # <|endoftext|>
+EOS_TOKEN_ID = 151643  # Qwen3 uses <|endoftext|> as EOS
+
+
+def append_eos_and_left_pad(input_ids, attention_mask, pad_token_id, eos_token_id):
+    """Append EOS to each sequence, then left-pad to the batch max."""
+    batch_size, seq_len = input_ids.shape
+    new_len = seq_len + 1
+    new_input_ids = np.full((batch_size, new_len), pad_token_id, dtype=input_ids.dtype)
+    new_attention_mask = np.zeros((batch_size, new_len), dtype=attention_mask.dtype)
+    for i in range(batch_size):
+        valid_len = int(attention_mask[i].sum())
+        out_len = valid_len + 1
+        start = new_len - out_len
+        new_input_ids[i, start:start + valid_len] = input_ids[i, :valid_len]
+        new_input_ids[i, start + valid_len] = eos_token_id
+        new_attention_mask[i, start:] = 1
+    return new_input_ids, new_attention_mask
+
+
 def predict(models, texts):
     tokenizer = models["tokenizer"]
     batch_dict = tokenizer(
@@ -82,6 +102,13 @@ def predict(models, texts):
 
     input_ids = batch_dict["input_ids"].astype(np.int64)
     attention_mask = batch_dict["attention_mask"].astype(np.int64)
+
+    if not args.disable_ailia_tokenizer:
+        # ailia_tokenizer does not append EOS and right-pads with GPT2 EOS(50256).
+        # Qwen3-Embedding expects an EOS appended and left-padding with <|endoftext|>.
+        input_ids, attention_mask = append_eos_and_left_pad(
+            input_ids, attention_mask, PAD_TOKEN_ID, EOS_TOKEN_ID
+        )
     print(input_ids)
 
     net = models["net"]
