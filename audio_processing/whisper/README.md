@@ -70,6 +70,11 @@ $ python3 whisper.py --model_type turbo --quantize int8
 
 The quantized models are exported using `export/export_turbo_quantized.py`.
 
+By adding the `--lite_whisper` option, you can use the [lite-whisper-large-v3-turbo](https://huggingface.co/efficient-speech/lite-whisper-large-v3-turbo) encoder, a low-rank compressed version of the turbo encoder. The decoder and dimensions are identical to turbo, so `--model_type` is ignored and forced to `turbo`.
+```bash
+$ python3 whisper.py --lite_whisper
+```
+
 ## Reference
 
 - [Whisper](https://github.com/openai/whisper)
@@ -137,6 +142,7 @@ ONNX opset=11 - 17
 [encoder_small.opt3.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/whisper/encoder_small.opt3.onnx.prototxt)  
 [encoder_medium.opt3.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/whisper/encoder_medium.opt3.onnx.prototxt)  
 [encoder_turbo.opt.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/whisper/encoder_turbo.opt.onnx.prototxt)  
+[lite-whisper-large-v3-turbo_encoder.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/whisper/lite-whisper-large-v3-turbo_encoder.onnx.prototxt)  
 
 [decoder_tiny_fix_kv_cache.opt3.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/whisper/decoder_tiny_fix_kv_cache.opt3.onnx.prototxt)  
 [decoder_base_fix_kv_cache.opt3.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/whisper/decoder_base_fix_kv_cache.opt3.onnx.prototxt)  
