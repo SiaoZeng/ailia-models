@@ -161,20 +161,7 @@ parser.add_argument(
     choices=["int4", "int8"],
     help="use int4 or int8 quantized model (turbo only).",
 )
-parser.add_argument(
-    "--lite_whisper",
-    action="store_true",
-    help="use lite-whisper-large-v3-turbo encoder (low-rank compressed encoder,"
-    " Decoder/dims are identical to turbo, so -m is ignored and forced to turbo.",
-)
 args = update_parser(parser)
-
-if args.lite_whisper and args.model_type != "turbo":
-    logger.info(
-        "--lite_whisper ignores -m %s, forcing -m turbo (dims/decoder are turbo's)",
-        args.model_type,
-    )
-    args.model_type = "turbo"
 
 if args.ailia_audio:
     from ailia_audio_utils import (
@@ -349,10 +336,6 @@ MODEL_ENC_LARGE_V3_PATH = "encoder_large_v3.onnx.prototxt"
 WEIGHT_ENC_TURBO_PATH = "encoder_turbo" + FP16 + OPT3 + ".onnx"
 MODEL_ENC_TURBO_PATH = "encoder_turbo" + FP16 + OPT3 + ".onnx.prototxt"
 
-# low-rank compressed turbo encoder
-WEIGHT_ENC_LITE_WHISPER_PATH = "lite-whisper-large-v3-turbo_encoder.onnx"
-MODEL_ENC_LITE_WHISPER_PATH = "lite-whisper-large-v3-turbo_encoder.onnx.prototxt"
-
 WEIGTH_ENC_LARGE_PB_PATH = "encoder_large_weights.pb"
 WEIGHT_DEC_LARGE_PB_PATH = "decoder_large_weights.pb"
 WEIGHT_DEC_LARGE_FIX_KV_CACHE_PB_PATH = "decoder_large_fix_kv_cache_weights.pb"
@@ -371,7 +354,6 @@ if args.quantize is not None:
     WEIGHT_ENC_TURBO_PB_PATH = None
 
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/whisper/"
-REMOTE_PATH_LITE_WHISPER = "https://storage.googleapis.com/ailia-models/lite-whisper/"
 
 
 # ======================
@@ -1246,12 +1228,7 @@ def main():
 
     WEIGHT_ENC_PATH, MODEL_ENC_PATH = model_info["enc"]
     WEIGHT_DEC_PATH, MODEL_DEC_PATH = model_info["dec"]
-    if args.lite_whisper:
-        WEIGHT_ENC_PATH = WEIGHT_ENC_LITE_WHISPER_PATH
-        MODEL_ENC_PATH = MODEL_ENC_LITE_WHISPER_PATH
-        check_and_download_models(WEIGHT_ENC_PATH, MODEL_ENC_PATH, REMOTE_PATH_LITE_WHISPER)
-    else:
-        check_and_download_models(WEIGHT_ENC_PATH, MODEL_ENC_PATH, REMOTE_PATH)
+    check_and_download_models(WEIGHT_ENC_PATH, MODEL_ENC_PATH, REMOTE_PATH)
     check_and_download_models(WEIGHT_DEC_PATH, MODEL_DEC_PATH, REMOTE_PATH)
     if args.model_type == "large":
         check_and_download_file(WEIGTH_ENC_LARGE_PB_PATH, REMOTE_PATH)
@@ -1269,8 +1246,7 @@ def main():
             )
     elif args.model_type == "turbo":
         if (
-            not args.lite_whisper
-            and args.fp16 == False
+            args.fp16 == False
             and WEIGHT_ENC_TURBO_PB_PATH is not None
         ):
             check_and_download_file(WEIGHT_ENC_TURBO_PB_PATH, REMOTE_PATH)
