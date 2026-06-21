@@ -22,8 +22,8 @@ _whisper = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_whisper)
 
 # lite-whisper 専用のモデル定数
-WEIGHT_ENC_LITE_WHISPER_PATH = "lite-whisper-large-v3-turbo_encoder.onnx"
-MODEL_ENC_LITE_WHISPER_PATH = "lite-whisper-large-v3-turbo_encoder.onnx.prototxt"
+WEIGHT_ENC_LITE_WHISPER_PATH = "lite-whisper-large-v3-turbo_encoder.opt.onnx"
+MODEL_ENC_LITE_WHISPER_PATH = "lite-whisper-large-v3-turbo_encoder.opt.onnx.prototxt"
 REMOTE_PATH_LITE_WHISPER = "https://storage.googleapis.com/ailia-models/lite-whisper/"
 
 # whisper モジュールの turbo エンコーダパスを lite-whisper のものに差し替える
