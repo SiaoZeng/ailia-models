@@ -55,6 +55,7 @@ $ python3 lite-whisper.py -V
 
 ## Reference
 
+- [LiteASR](https://github.com/efeslab/LiteASR)
 - [lite-whisper-large-v3-turbo](https://huggingface.co/efficient-speech/lite-whisper-large-v3-turbo)
 - [Whisper](https://github.com/openai/whisper)
 
@@ -69,3 +70,4 @@ ONNX opset=17
 ## Netron
 
 [lite-whisper-large-v3-turbo_encoder.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/lite-whisper/lite-whisper-large-v3-turbo_encoder.onnx.prototxt)  
+[lite-whisper-large-v3-turbo_encoder.opt.onnx.prototxt](https://netron.app/?url=https://storage.googleapis.com/ailia-models/lite-whisper/lite-whisper-large-v3-turbo_encoder.opt.onnx.prototxt)  
