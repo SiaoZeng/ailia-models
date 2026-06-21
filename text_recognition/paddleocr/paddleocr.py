@@ -67,7 +67,16 @@ DICT_PATH_REC_KOR_MBL = './dict/kor_eng_num_sym_org.txt'
 IMAGE_OR_VIDEO_PATH = 'input.jpg'
 SAVE_IMAGE_OR_VIDEO_PATH = 'output.png'
 
-REOPEN_REQUIRE_IF_SHAPE_CHANED = True # Require for ailia SDK <= 1.2.16
+version = ailia.get_version().split(".")
+AILIA_VERSION_MAJOR = int(version[0])
+AILIA_VERSION_MINOR = int(version[1])
+AILIA_VERSION_REVISION = int(version[2])
+
+# Require for ailia SDK <= 1.2.16
+REOPEN_REQUIRE_IF_SHAPE_CHANED = (
+    (AILIA_VERSION_MAJOR, AILIA_VERSION_MINOR, AILIA_VERSION_REVISION)
+    <= (1, 2, 16)
+)
 
 # ======================
 # Arguemnt Parser Config

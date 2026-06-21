@@ -211,6 +211,7 @@ cd ../../image_manipulation/cnngeometric_pytorch; python3 cnngeometric_pytorch.p
 cd ../../image_manipulation/lightglue; python3 lightglue.py ${OPTION}
 cd ../../image_manipulation/docshadow; python3 docshadow.py ${OPTION}
 cd ../../image_manipulation/fbcnn; python3 fbcnn.py ${OPTION}
+cd ../../image_quality_assessment/aesthetic-predictor; python3 aesthetic-predictor.py ${OPTION}
 cd ../../image_restoration/nafnet; python3 nafnet.py ${OPTION}
 cd ../../image_segmentation/deeplabv3; python3 deeplabv3.py ${OPTION}
 cd ../../image_segmentation/hair_segmentation; python3 hair_segmentation.py ${OPTION}
@@ -276,6 +277,7 @@ cd ../../natural_language_processing/bert_ner_japanese; python3 bert_ner_japanes
 cd ../../natural_language_processing/multilingual-minilmv2; python3 multilingual-minilmv2.py ${OPTION}
 cd ../../natural_language_processing/ruri-v3; python3 ruri-v3.py ${OPTION}
 cd ../../natural_language_processing/embeddinggemma; python3 embeddinggemma.py ${OPTION}
+cd ../../natural_language_processing/qwen3-embedding; python3 qwen3-embedding.py ${OPTION}
 cd ../../natural_language_processing/ruri-v3-reranker; python3 ruri-v3-reranker.py ${OPTION}
 cd ../../network_intrusion_detection/bert-network-packet-flow-header-payload; python3 bert-network-packet-flow-header-payload.py ${OPTION}
 cd ../../network_intrusion_detection/falcon-adapter-network-packet; python3 falcon-adapter-network-packet.py ${OPTION}
