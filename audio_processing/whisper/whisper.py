@@ -165,7 +165,6 @@ parser.add_argument(
     "--lite_whisper",
     action="store_true",
     help="use lite-whisper-large-v3-turbo encoder (low-rank compressed encoder,"
-    " https://huggingface.co/efficient-speech/lite-whisper-large-v3-turbo)."
     " Decoder/dims are identical to turbo, so -m is ignored and forced to turbo.",
 )
 args = update_parser(parser)
@@ -372,6 +371,7 @@ if args.quantize is not None:
     WEIGHT_ENC_TURBO_PB_PATH = None
 
 REMOTE_PATH = "https://storage.googleapis.com/ailia-models/whisper/"
+REMOTE_PATH_LITE_WHISPER = "https://storage.googleapis.com/ailia-models/lite-whisper/"
 
 
 # ======================
@@ -1249,6 +1249,7 @@ def main():
     if args.lite_whisper:
         WEIGHT_ENC_PATH = WEIGHT_ENC_LITE_WHISPER_PATH
         MODEL_ENC_PATH = MODEL_ENC_LITE_WHISPER_PATH
+        check_and_download_models(WEIGHT_ENC_PATH, MODEL_ENC_PATH, REMOTE_PATH_LITE_WHISPER)
     else:
         check_and_download_models(WEIGHT_ENC_PATH, MODEL_ENC_PATH, REMOTE_PATH)
     check_and_download_models(WEIGHT_DEC_PATH, MODEL_DEC_PATH, REMOTE_PATH)
