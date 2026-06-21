@@ -5,6 +5,7 @@ import importlib.util
 # モデルファイルや相対パスが whisper/ を基準にしているため CWD を変更する
 _whisper_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "whisper")
 os.chdir(_whisper_dir)
+sys.path.insert(0, _whisper_dir)
 
 # lite-whisper は turbo のデコーダ/dims を使用するため -m turbo を強制する
 if "--model_type" not in sys.argv and "-m" not in sys.argv:
