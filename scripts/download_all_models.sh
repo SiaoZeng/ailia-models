@@ -279,6 +279,7 @@ cd ../../natural_language_processing/multilingual-minilmv2; python3 multilingual
 cd ../../natural_language_processing/ruri-v3; python3 ruri-v3.py ${OPTION}
 cd ../../natural_language_processing/embeddinggemma; python3 embeddinggemma.py ${OPTION}
 cd ../../natural_language_processing/qwen3-embedding; python3 qwen3-embedding.py ${OPTION}
+cd ../../natural_language_processing/ruri-v3-reranker; python3 ruri-v3-reranker.py ${OPTION}
 cd ../../network_intrusion_detection/bert-network-packet-flow-header-payload; python3 bert-network-packet-flow-header-payload.py ${OPTION}
 cd ../../network_intrusion_detection/falcon-adapter-network-packet; python3 falcon-adapter-network-packet.py ${OPTION}
 cd ../../neural_rendering/nerf; python3 nerf.py ${OPTION}
