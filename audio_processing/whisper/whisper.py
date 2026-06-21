@@ -1,16 +1,15 @@
-import platform
-import queue
 import sys
 import time
-import zlib
 from collections import namedtuple
+import platform
+import queue
+import zlib
 from logging import getLogger
 
 import numpy as np
 
 # import original modules
 sys.path.append("../../util")
-from arg_utils import get_base_parser, update_parser  # noqa
 from decode_utils import (
     ApplyTimestampRules,
     BeamSearchDecoder,
@@ -19,10 +18,11 @@ from decode_utils import (
     SuppressBlank,
     SuppressTokens,
 )
-from languages import LANGUAGES, TO_LANGUAGE_CODE
 from math_utils import softmax
 from microphone_utils import start_microphone_input  # noqa
-from model_utils import check_and_download_file, check_and_download_models  # noqa
+from model_utils import check_and_download_models, check_and_download_file  # noqa
+from languages import LANGUAGES, TO_LANGUAGE_CODE
+from arg_utils import get_base_parser, get_savepath, update_parser  # noqa
 
 logger = getLogger(__name__)
 
@@ -155,10 +155,7 @@ parser.add_argument(
     "--fp16", action="store_true", help="use fp16 model (default : fp32 model)."
 )
 parser.add_argument(
-    "--quantize",
-    type=str,
-    default=None,
-    choices=["int4", "int8"],
+    "--quantize", type=str, default=None, choices=["int4", "int8"],
     help="use int4 or int8 quantized model (turbo only).",
 )
 args = update_parser(parser)
@@ -288,16 +285,14 @@ if args.fp16:
 
 if not args.dynamic_kv_cache:
     # 高速化のためKV_CACHEのサイズを最大サイズで固定化したバージョン
-    WEIGHT_DEC_TINY_PATH = "decoder_tiny_fix_kv_cache" + FP16 + OPT2 + ".onnx"
-    MODEL_DEC_TINY_PATH = "decoder_tiny_fix_kv_cache" + FP16 + OPT2 + ".onnx.prototxt"
+    WEIGHT_DEC_TINY_PATH = "decoder_tiny_fix_kv_cache" +  FP16 + OPT2 + ".onnx"
+    MODEL_DEC_TINY_PATH = "decoder_tiny_fix_kv_cache" +  FP16 + OPT2 + ".onnx.prototxt"
     WEIGHT_DEC_BASE_PATH = "decoder_base_fix_kv_cache" + FP16 + OPT2 + ".onnx"
     MODEL_DEC_BASE_PATH = "decoder_base_fix_kv_cache" + FP16 + OPT2 + ".onnx.prototxt"
     WEIGHT_DEC_SMALL_PATH = "decoder_small_fix_kv_cache" + FP16 + OPT2 + ".onnx"
     MODEL_DEC_SMALL_PATH = "decoder_small_fix_kv_cache" + FP16 + OPT2 + ".onnx.prototxt"
     WEIGHT_DEC_MEDIUM_PATH = "decoder_medium_fix_kv_cache" + FP16 + OPT2 + ".onnx"
-    MODEL_DEC_MEDIUM_PATH = (
-        "decoder_medium_fix_kv_cache" + FP16 + OPT2 + ".onnx.prototxt"
-    )
+    MODEL_DEC_MEDIUM_PATH = "decoder_medium_fix_kv_cache" + FP16 + OPT2 + ".onnx.prototxt"
     WEIGHT_DEC_LARGE_PATH = "decoder_large_fix_kv_cache.onnx"
     MODEL_DEC_LARGE_PATH = "decoder_large_fix_kv_cache.onnx.prototxt"
     WEIGHT_DEC_LARGE_V3_PATH = "decoder_large_v3_fix_kv_cache.onnx"
@@ -334,7 +329,7 @@ MODEL_ENC_LARGE_PATH = "encoder_large.onnx.prototxt"
 WEIGHT_ENC_LARGE_V3_PATH = "encoder_large_v3.onnx"
 MODEL_ENC_LARGE_V3_PATH = "encoder_large_v3.onnx.prototxt"
 WEIGHT_ENC_TURBO_PATH = "encoder_turbo" + FP16 + OPT3 + ".onnx"
-MODEL_ENC_TURBO_PATH = "encoder_turbo" + FP16 + OPT3 + ".onnx.prototxt"
+MODEL_ENC_TURBO_PATH = "encoder_turbo"  + FP16 + OPT3 + ".onnx.prototxt"
 
 WEIGTH_ENC_LARGE_PB_PATH = "encoder_large_weights.pb"
 WEIGHT_DEC_LARGE_PB_PATH = "decoder_large_weights.pb"
@@ -692,7 +687,7 @@ DecodingResult = namedtuple(
 )
 
 
-def decode(enc_net, dec_net, mel, options, audio_features_cache=None):
+def decode(enc_net, dec_net, mel, options, audio_features_cache = None):
     single = mel.ndim == 2
     if single:
         mel = mel.unsqueeze(0)
@@ -802,7 +797,7 @@ def decode(enc_net, dec_net, mel, options, audio_features_cache=None):
 
         if args.intermediate:
             texts = [tokenizer.decode(t[len(initial_tokens) :]).strip() for t in tokens]
-            print(texts[0][-32:] + "\n\u001b[2A")
+            print(texts[0][-32:] + "\n\u001B[2A")
 
     # reshape the tensors to have (n_audio, n_group) as the first two dimensions
     audio_features = audio_features[::n_group]
@@ -853,9 +848,7 @@ def decode(enc_net, dec_net, mel, options, audio_features_cache=None):
     return result
 
 
-def decode_with_fallback(
-    enc_net, dec_net, segment, decode_options, audio_features_cache=None
-):
+def decode_with_fallback(enc_net, dec_net, segment, decode_options, audio_features_cache = None):
     logprob_threshold = decode_options.get("logprob_threshold", -1.0)
     temperature = decode_options.get("temperature", 0)
     no_speech_threshold = decode_options.get("no_speech_threshold", 0.6)
@@ -878,13 +871,7 @@ def decode_with_fallback(
             kwargs.pop("best_of", None)
 
         options = {**kwargs, "temperature": t}
-        decode_result = decode(
-            enc_net,
-            dec_net,
-            segment,
-            options,
-            audio_features_cache=audio_features_cache,
-        )[0]
+        decode_result = decode(enc_net, dec_net, segment, options, audio_features_cache = audio_features_cache)[0]
 
         needs_fallback = False
         if (
@@ -1001,13 +988,7 @@ def predict(wav, enc_net, dec_net, immediate=False, microphone=False):
         mel_segment = pad_or_trim(mel_segment, N_FRAMES)
 
         decode_options["prompt"] = all_tokens[prompt_reset_since:]
-        result = decode_with_fallback(
-            enc_net,
-            dec_net,
-            mel_segment,
-            decode_options,
-            audio_features_cache=audio_features_cache,
-        )
+        result = decode_with_fallback(enc_net, dec_net, mel_segment, decode_options, audio_features_cache = audio_features_cache)
         result = result[0]
         tokens = np.array(result.tokens)
 
@@ -1245,10 +1226,7 @@ def main():
                 WEIGHT_DEC_LARGE_V3_FIX_KV_CACHE_PB_PATH, REMOTE_PATH
             )
     elif args.model_type == "turbo":
-        if (
-            args.fp16 == False
-            and WEIGHT_ENC_TURBO_PB_PATH is not None
-        ):
+        if args.fp16 == False and WEIGHT_ENC_TURBO_PB_PATH is not None:
             check_and_download_file(WEIGHT_ENC_TURBO_PB_PATH, REMOTE_PATH)
 
     mic_info = None
@@ -1296,9 +1274,7 @@ def main():
             sess_options.graph_optimization_level = (
                 onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
             )
-        enc_net = onnxruntime.InferenceSession(
-            WEIGHT_ENC_PATH, sess_options=sess_options, providers=providers
-        )
+        enc_net = onnxruntime.InferenceSession(WEIGHT_ENC_PATH, sess_options=sess_options, providers=providers)
         if args.profile:
             options = sess_options or onnxruntime.SessionOptions()
             options.enable_profiling = True
@@ -1306,9 +1282,7 @@ def main():
                 WEIGHT_DEC_PATH, options, providers=providers
             )
         else:
-            dec_net = onnxruntime.InferenceSession(
-                WEIGHT_DEC_PATH, sess_options=sess_options, providers=providers
-            )
+            dec_net = onnxruntime.InferenceSession(WEIGHT_DEC_PATH, sess_options=sess_options, providers=providers)
 
     if args.V:
         # microphone input mode
