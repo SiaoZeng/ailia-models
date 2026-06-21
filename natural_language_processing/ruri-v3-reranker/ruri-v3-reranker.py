@@ -173,10 +173,9 @@ def main():
 
         tokenizer = AutoTokenizer.from_pretrained("tokenizer")
     else:
-        from ailia_tokenizer import LlamaTokenizer
+        from ailia_tokenizer import GemmaTokenizer
 
-        tokenizer = LlamaTokenizer.from_pretrained("./tokenizer")
-        #tokenizer._pad_token_id = 3 # これを指定しないとpadが0になるが、attn_maskによって影響はない
+        tokenizer = GemmaTokenizer.from_pretrained("./tokenizer")
 
     models = {
         "net": net,
