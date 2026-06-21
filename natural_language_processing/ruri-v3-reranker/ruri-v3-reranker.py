@@ -169,17 +169,17 @@ def main():
         net = onnxruntime.InferenceSession(WEIGHT_PATH, providers=providers)
 
     if args.disable_ailia_tokenizer:
-        from transformers import AutoTokenizer
+        #from transformers import AutoTokenizer
         #tokenizer = AutoTokenizer.from_pretrained("cl-nagoya/ruri-v3-reranker-310m") # リファレンス
         #tokenizer = AutoTokenizer.from_pretrained("tokenizer") # 不一致
         from transformers import PreTrainedTokenizerFast
         tokenizer = PreTrainedTokenizerFast.from_pretrained("tokenizer") # 一致
     else:
         #from ailia_tokenizer import LlamaTokenizer
-        #tokenizer = GemmaTokenizer.from_pretrained("./tokenizer") # 不一致
+        #tokenizer = LlamaTokenizer.from_pretrained("./tokenizer") # BOSあり、EOSなし、不一致
 
         from ailia_tokenizer import GemmaTokenizer
-        tokenizer = GemmaTokenizer.from_pretrained("./tokenizer") # 一致
+        tokenizer = GemmaTokenizer.from_pretrained("./tokenizer") # BOSあり、EOSあり、一致
 
     models = {
         "net": net,
