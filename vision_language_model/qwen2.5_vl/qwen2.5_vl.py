@@ -89,6 +89,10 @@ parser.add_argument(
 parser.add_argument(
     "--disable_ailia_tokenizer", action="store_true", help="disable ailia tokenizer."
 )
+parser.add_argument(
+    "--quantize", type=str, default=None, choices=["int4"],
+    help="use int4 quantized model.",
+)
 parser.add_argument("--onnx", action="store_true", help="execute onnxruntime version.")
 args = update_parser(parser)
 
@@ -97,12 +101,20 @@ args = update_parser(parser)
 # Model selection
 # ======================
 
-WEIGHT_PATH = "Qwen2.5-VL-3B_language_model.onnx"
-MODEL_PATH = "Qwen2.5-VL-3B_language_model.onnx.prototxt"
-WEIGHT_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder.onnx"
-MODEL_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder.onnx.prototxt"
-PB_PATH = "Qwen2.5-VL-3B_language_model_weights.pb"
-PB_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder_weights.pb"
+if args.quantize == "int4":
+    WEIGHT_PATH = "Qwen2.5-VL-3B_language_model_int4.onnx"
+    MODEL_PATH = "Qwen2.5-VL-3B_language_model_int4.onnx.prototxt"
+    WEIGHT_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder_int4.onnx"
+    MODEL_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder_int4.onnx.prototxt"
+    PB_PATH = "Qwen2.5-VL-3B_language_model_int4_weights.pb"
+    PB_VISION_PATH = None
+else:
+    WEIGHT_PATH = "Qwen2.5-VL-3B_language_model.onnx"
+    MODEL_PATH = "Qwen2.5-VL-3B_language_model.onnx.prototxt"
+    WEIGHT_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder.onnx"
+    MODEL_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder.onnx.prototxt"
+    PB_PATH = "Qwen2.5-VL-3B_language_model_weights.pb"
+    PB_VISION_PATH = "Qwen2.5-VL-3B_vision_encoder_weights.pb"
 
 # ======================
 # Secondary Functions
@@ -1133,8 +1145,10 @@ def recognize(models):
 def main():
     check_and_download_models(WEIGHT_PATH, MODEL_PATH, REMOTE_PATH)
     check_and_download_models(WEIGHT_VISION_PATH, MODEL_VISION_PATH, REMOTE_PATH)
-    check_and_download_file(PB_PATH, REMOTE_PATH)
-    check_and_download_file(PB_VISION_PATH, REMOTE_PATH)
+    if PB_PATH is not None:
+        check_and_download_file(PB_PATH, REMOTE_PATH)
+    if PB_VISION_PATH is not None:
+        check_and_download_file(PB_VISION_PATH, REMOTE_PATH)
 
     env_id = args.env_id
 
@@ -1163,7 +1177,14 @@ def main():
         vision_encoder = onnxruntime.InferenceSession(
             WEIGHT_VISION_PATH, providers=providers
         )
-        language_model = onnxruntime.InferenceSession(WEIGHT_PATH, providers=providers)
+        sess_options = onnxruntime.SessionOptions()
+        if args.quantize is not None:
+            sess_options.graph_optimization_level = (
+                onnxruntime.GraphOptimizationLevel.ORT_DISABLE_ALL
+            )
+        language_model = onnxruntime.InferenceSession(
+            WEIGHT_PATH, sess_options=sess_options, providers=providers
+        )
 
     if args.disable_ailia_tokenizer:
         import transformers
