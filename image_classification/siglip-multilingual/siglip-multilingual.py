@@ -25,7 +25,7 @@ logger = getLogger(__name__)
 WEIGHT_PATH = "siglip-base-patch16-256-multilingual.onnx"
 MODEL_PATH = "siglip-base-patch16-256-multilingual.onnx.prototxt"
 REMOTE_PATH = (
-    "https://storage.googleapis.com/ailia-models/siglip-base-patch16-256-multilingual/"
+    "https://storage.googleapis.com/ailia-models/siglip-multilingual/"
 )
 
 IMAGE_PATH = "demo.jpg"
