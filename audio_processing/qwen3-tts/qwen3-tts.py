@@ -43,7 +43,8 @@ REMOTE_PATH = "https://storage.googleapis.com/ailia-models/qwen3-tts/"
 parser = get_base_parser(
     'QWEN3 TTS', 
     TEXT_STR, 
-    OUTPUT_WAV_PATH   
+    OUTPUT_WAV_PATH,
+    large_model = True
 )
 
 # 参照音声ファイルのパス
@@ -72,6 +73,12 @@ parser.add_argument(
     '-p', '--parameter_num',
     default='0.6B',
     help='[0.6B, 1.8B]'
+)
+parser.add_argument(
+    '--language', type=str, default='Auto',
+    help='Target language. "Auto" for auto detection, or one of: '
+         'chinese, english, japanese, korean, german, french, russian, '
+         'portuguese, spanish, italian'
 )
 parser.add_argument(
     '--disable_ailia_tokenizer', action='store_true', help='disable ailia tokenizer.'
@@ -229,6 +236,7 @@ def load_qwen_config(config_path="config.json"):
         "codec_eos_id":       tc["codec_eos_token_id"],   # 2150 
         "codec_pad_id":       tc["codec_pad_id"],         # 2148
         "codec_nothink_id":   tc["codec_nothink_id"],     # 2155
+        "codec_think_id":     tc["codec_think_id"],       # 2154
         "codec_think_bos_id": tc["codec_think_bos_id"],   # 2156
         "codec_think_eos_id": tc["codec_think_eos_id"],   # 2157
         "codec_language_id":  tc.get("codec_language_id", {}),
@@ -485,8 +493,22 @@ class Qwen3TTS:
     # ------------------------------------------------------------------
     # predict
     # ------------------------------------------------------------------
-    def predict(self, text, ref_audio=None, ref_text=None):
+    def predict(self, text, ref_audio=None, ref_text=None, language="Auto"):
         cfg = self.cfg   # 短縮エイリアス
+
+        # ---- 言語ID 解決 ----
+        #   "Auto" → language_id=None (自動判定: nothink パス)
+        #   明示指定 → codec_language_id から取得 (think パス)
+        if language is None or language.lower() == "auto":
+            language_id = None
+        else:
+            if language.lower() not in cfg["codec_language_id"]:
+                logger.error(
+                    f"Unsupported language: {language}. "
+                    f"Supported: Auto, {', '.join(cfg['codec_language_id'].keys())}"
+                )
+                sys.exit()
+            language_id = cfg["codec_language_id"][language.lower()]
 
         # ---- 参照音声 ----
         if ref_audio is not None:
@@ -541,17 +563,25 @@ class Qwen3TTS:
         tts_pad_embed = projected_specials[:, 2:3, :]
 
         # ---- codec tag 埋め込み ----
-        tag_ids_0 = [cfg["codec_nothink_id"],   # 2155
-                     cfg["codec_think_bos_id"],  # 2156
-                     cfg["codec_think_eos_id"]]  # 2157 
+        #   Auto (language_id=None): [nothink, think_bos, think_eos]            (3 tokens)
+        #   明示指定:                [think,   think_bos, language_id, think_eos] (4 tokens)
+        if language_id is None:
+            tag_ids_0 = [cfg["codec_nothink_id"],    # 2155
+                         cfg["codec_think_bos_id"],  # 2156
+                         cfg["codec_think_eos_id"]]  # 2157
+        else:
+            tag_ids_0 = [cfg["codec_think_id"],      # 2154
+                         cfg["codec_think_bos_id"],  # 2156
+                         language_id,                # e.g. japanese=2058
+                         cfg["codec_think_eos_id"]]  # 2157
         tag_ids_1 = [cfg["codec_pad_id"],        # 2148
-                     cfg["codec_bos_id"]]         # 2149 
-        tag_part0   = self.codec_emb_weight[0][tag_ids_0]          # [3, 1024]
+                     cfg["codec_bos_id"]]         # 2149
+        tag_part0   = self.codec_emb_weight[0][tag_ids_0]          # [3 or 4, 1024]
         tag_part_spk = spk_emb[np.newaxis, :]                      # [1, 1024]
         tag_part1   = self.codec_emb_weight[0][tag_ids_1]          # [2, 1024]
         codec_tag_emb = np.expand_dims(
             np.concatenate([tag_part0, tag_part_spk, tag_part1], axis=0), axis=0
-        )  # [1, 6, 1024]
+        )  # [1, 6 or 7, 1024]
 
         # ---- role 投影 ----
         role_ids  = [cfg["im_start_id"], cfg["assistant_id"], 198]  # 198=\n
@@ -561,7 +591,9 @@ class Qwen3TTS:
         )[0]  # [1, 3, 1024]
 
         # ---- tag 投影 ----
-        tag_base_ids  = [cfg["tts_pad_id"]] * 4 + [cfg["tts_bos_id"]] 
+        #   tts_pad * (codec_tag_len - 2) + tts_bos  → codec_tag_emb[:, :-1] と同じ長さ
+        num_tts_pad   = codec_tag_emb.shape[1] - 2
+        tag_base_ids  = [cfg["tts_pad_id"]] * num_tts_pad + [cfg["tts_bos_id"]]
         tag_base_proj = self.talker_io.run(
             [self.text_emb_weight[tag_base_ids][np.newaxis, :].astype(np.float32),
              np.zeros((1, 1, 1024), dtype=np.float32)]
@@ -723,7 +755,7 @@ def main():
 
     # 3. 推論実行 (Greedyモード)
     print("Generating speech...")
-    waveform = tts_engine.predict(args.input, ref_audio=args.ref_audio, ref_text=wav_text)
+    waveform = tts_engine.predict(args.input, ref_audio=args.ref_audio, ref_text=wav_text, language=args.language)
     
     # 4. 保存
     sf.write(args.savepath, waveform.squeeze(), 24000)

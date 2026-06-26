@@ -34,11 +34,22 @@ You can directly pass the text you want to synthesize using the `--input` argume
 python qwen3-tts.py --input "Hello, this is a test of voice cloning." --ref_audio clone_2.wav --ref_text clone_2.txt --savepath output.wav
 ```
 
+### Language
+
+By default the language is auto-detected (`--language Auto`). If the synthesized speech is pronounced in the wrong language (for example, Japanese text being read with a Chinese accent), specify the target language explicitly with the `--language` option.
+
+```bash
+python qwen3-tts.py --input "こんにちは、今日はいい天気ですね。" --language japanese
+```
+
+Supported languages: `Auto` (default), `chinese`, `english`, `japanese`, `korean`, `german`, `french`, `russian`, `portuguese`, `spanish`, `italian`.
+
 ### Options
 
 - `-i`, `--input` Direct input text string to synthesize. (e.g. `Hello, this is a test of voice cloning.`)
 - `--ref_audio` Reference audio file path for Voice Clone mode. (e.g. `clone_2.wav`)
 - `--ref_text` Reference text file path containing the transcript of the reference audio. (e.g. `clone_2.txt`)
+- `--language` Target language for synthesis. `Auto` for auto detection, or one of `chinese`, `english`, `japanese`, `korean`, `german`, `french`, `russian`, `portuguese`, `spanish`, `italian`. (default: `Auto`)
 - `-s`, `--savepath` Save path for the output synthesized audio. (default: `output.wav`)
 
 ## Model Format
