@@ -50,7 +50,15 @@ Supported languages: `Auto` (default), `chinese`, `english`, `japanese`, `korean
 - `--ref_audio` Reference audio file path for Voice Clone mode. (e.g. `clone_2.wav`)
 - `--ref_text` Reference text file path containing the transcript of the reference audio. (e.g. `clone_2.txt`)
 - `--language` Target language for synthesis. `Auto` for auto detection, or one of `chinese`, `english`, `japanese`, `korean`, `german`, `french`, `russian`, `portuguese`, `spanish`, `italian`. (default: `Auto`)
+- `--temperature` Sampling temperature for the talker. `0` for greedy decoding. (default: `0.9`, matches the official implementation)
+- `--top_k` Top-k sampling for the talker. (default: `50`, matches the official implementation)
+- `--repetition_penalty` Repetition penalty for the talker. (default: `1.05`)
+- `--subtalker_temperature` Sampling temperature for the subtalker (code predictor). `0` for greedy decoding. (default: `0.9`, matches the official implementation)
+- `--subtalker_top_k` Top-k sampling for the subtalker (code predictor). (default: `50`, matches the official implementation)
+- `--seed` Random seed for reproducible sampling. (default: `None`)
 - `-s`, `--savepath` Save path for the output synthesized audio. (default: `output.wav`)
+
+> **Note:** Sampling (`temperature=0.9`, `top_k=50`) is used by default to match the official implementation. Set `--temperature 0` for deterministic greedy decoding. Use `--seed` to make sampled output reproducible.
 
 ## Model Format
 
