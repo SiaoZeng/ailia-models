@@ -12,7 +12,6 @@ from scipy.io.wavfile import write, read
 from librosa.util import normalize
 from librosa.filters import mel as librosa_mel_fn
 import os
-from transformers import AutoTokenizer
 import json
 from dataclasses import dataclass
 from typing import Any, List, Optional
@@ -73,6 +72,9 @@ parser.add_argument(
     '-p', '--parameter_num',
     default='0.6B',
     help='[0.6B, 1.8B]'
+)
+parser.add_argument(
+    '--disable_ailia_tokenizer', action='store_true', help='disable ailia tokenizer.'
 )
 args = update_parser(parser, check_input_type=False)
 
@@ -236,6 +238,54 @@ def load_qwen_config(config_path="config.json"):
         "rope_theta":         tc["rope_theta"],                   # 1000000
         "mrope_section":      rs.get("mrope_section", [24, 20, 20]),
     }
+TOKENIZER_DIR = "./tokenizer"
+
+# ailia tokenizer (GPT2Tokenizer) で利用する追加特殊トークン (token id 151643-151656 の順)
+TOKENIZER_SPECIAL_TOKENS = [
+    '<|endoftext|>', '<|im_start|>', '<|im_end|>',
+    '<|object_ref_start|>', '<|object_ref_end|>',
+    '<|box_start|>', '<|box_end|>',
+    '<|quad_start|>', '<|quad_end|>',
+    '<|vision_start|>', '<|vision_end|>',
+    '<|vision_pad|>', '<|image_pad|>', '<|video_pad|>',
+]
+
+
+def _ensure_vocab_and_merges():
+    """ailia tokenizer 用に vocab.json / merges.txt を tokenizer.json から生成する。"""
+    vocab_path = os.path.join(TOKENIZER_DIR, "vocab.json")
+    merges_path = os.path.join(TOKENIZER_DIR, "merges.txt")
+    if os.path.exists(vocab_path) and os.path.exists(merges_path):
+        return
+
+    with open(os.path.join(TOKENIZER_DIR, "tokenizer.json"), "r", encoding="utf-8") as f:
+        model = json.load(f)["model"]
+
+    with open(vocab_path, "w", encoding="utf-8") as f:
+        json.dump(model["vocab"], f, ensure_ascii=False)
+
+    with open(merges_path, "w", encoding="utf-8") as f:
+        f.write("#version: 0.2\n")
+        for merge in model["merges"]:
+            if isinstance(merge, list):
+                merge = " ".join(merge)
+            f.write(merge + "\n")
+
+
+def create_tokenizer():
+    if args.disable_ailia_tokenizer:
+        from transformers import AutoTokenizer
+        return AutoTokenizer.from_pretrained(TOKENIZER_DIR)
+    else:
+        from ailia_tokenizer import GPT2Tokenizer
+        _ensure_vocab_and_merges()
+        tokenizer = GPT2Tokenizer.from_pretrained(TOKENIZER_DIR)
+        tokenizer.add_special_tokens(
+            {"additional_special_tokens": TOKENIZER_SPECIAL_TOKENS}
+        )
+        return tokenizer
+
+
 @dataclass
 class VoiceClonePromptItem:
     ref_code: Any 
@@ -273,13 +323,13 @@ class Qwen3TTS:
         self.tokenizer_decoder = ailia.Net(stream=MODEL_PATH_TOKENIZER_DECODER, weight=WEIGHT_PATH_TOKENIZER_DECODER, memory_mode=memory_mode)
         self.text_emb_weight   = np.load(WEIGHT_PATH_TEXT_EMB)
         self.codec_emb_weight  = np.load(WEIGHT_PATH_CODEC_EMB)
-        self.text_tokenizer    = AutoTokenizer.from_pretrained('./tokenizer')
+        self.text_tokenizer    = create_tokenizer()
         self.subtalker_decoder  = ailia.Net(stream=MODEL_PATH_SUBTALKER_DECODER, weight=WEIGHT_PATH_SUBTALKER_DECODER, memory_mode=memory_mode)
         self.text_emb_weight    = np.load(WEIGHT_PATH_TEXT_EMB)
         self.codec_emb_weight   = np.load(WEIGHT_PATH_CODEC_EMB)
         self.subtalker_lm_heads  = np.load(WEIGHT_PATH_SUBTALKER_LM_HEADS)   # [15, 2048, 1024]
         self.subtalker_codec_emb = np.load(WEIGHT_PATH_SUBTALKER_CODEC_EMB)  # [15, 2048, 1024]
-        self.text_tokenizer      = AutoTokenizer.from_pretrained('./tokenizer')
+        self.text_tokenizer      = create_tokenizer()
         self._sub_attn_prefill = self.generate_attention_mask(2)          # [1,1,2,2]
         self._sub_pos_prefill  = np.array([[0, 1]], dtype=np.int64)
         self._sub_attn_decode  = [self.generate_attention_mask(1, 1+k) for k in range(1, 15)]

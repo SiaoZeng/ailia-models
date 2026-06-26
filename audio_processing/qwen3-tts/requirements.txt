@@ -1,4 +1,5 @@
 ailia==1.6.1.0
+ailia_tokenizer==1.5.0.0
 annotated-doc==0.0.4
 anyio==4.12.1
 audioop-lts==0.2.2
