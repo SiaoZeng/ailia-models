@@ -58,7 +58,7 @@ Supported languages: `Auto` (default), `chinese`, `english`, `japanese`, `korean
 - `--seed` Random seed for reproducible sampling. (default: `None`)
 - `-s`, `--savepath` Save path for the output synthesized audio. (default: `output.wav`)
 
-> **Note:** Sampling (`temperature=0.9`, `top_k=50`) is used by default to match the official implementation. Set `--temperature 0` for deterministic greedy decoding. Use `--seed` to make sampled output reproducible.
+> **Note:** Sampling (`temperature=0.9`, `top_k=50`, `subtalker_temperature=0.9`, `subtalker_top_k=50`) is used by default to match the official implementation. Set both `--temperature 0` and `--subtalker_temperature 0` for deterministic greedy decoding. Use `--seed` to make sampled output reproducible.
 
 ## Model Format
 
