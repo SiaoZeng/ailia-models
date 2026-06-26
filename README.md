@@ -145,6 +145,7 @@ If you would like to try on your computer:
 | [gpt-sovits-v2](/audio_processing/gpt-sovits-v2/) | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) | Pytorch | 1.4.0 and later | Aug 2024 |  |
 | [gpt-sovits-v3](/audio_processing/gpt-sovits-v3/) | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) | Pytorch | 1.4.0 and later | Feb 2025 |  |
 | [cosyvoice2](/audio_processing/cosyvoice2/) | [CosyVoice2](https://github.com/FunAudioLLM/CosyVoice/tree/main) | Pytorch | 1.4.0 and later | Dec 2024 |  |
+| [qwen3-tts](/audio_processing/qwen3-tts/) | [Qwen3-TTS Official Repository](https://github.com/QwenLM/Qwen3-TTS) | Pytorch | 1.6.0 and later | Jan 2026 |  |
 
 ### Voice activity detection
 
