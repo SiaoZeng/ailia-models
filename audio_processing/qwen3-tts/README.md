@@ -23,6 +23,9 @@ pip install -r requirements.txt
 
 This model supports **Voice Clone (Zero-shot Voice Conversion)** by default. You need to provide a text to synthesize, a reference audio file of the target speaker, and its corresponding text transcript.
 
+The bundled sample reference audio (`clone_2.wav`) and transcript (`clone_2.txt`) are based on the official Qwen3-TTS Voice Clone example. The original reference audio is published as `clone.wav` at:
+`https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav`
+
 For the sample wav,
 ```bash
 $ python3 qwen3-tts.py
