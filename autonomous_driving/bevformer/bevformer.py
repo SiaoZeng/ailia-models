@@ -146,8 +146,8 @@ parser.add_argument(
     help='Use ONNX Runtime instead of ailia SDK.'
 )
 parser.add_argument(
-    '--quantize', type=str, default=None, choices=["int8"],
-    help='Use int8 quantized model.',
+    '--quantize', type=str, default=None, choices=["int8", "int4"],
+    help='Use int8 or int4 quantized model.',
 )
 args = update_parser(parser)
 
